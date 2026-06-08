@@ -32,6 +32,10 @@ export default function CenterDashboard({
   const [extractedRoll, setExtractedRoll] = useState('Awaiting Scan...');
   const [extractedConfidence, setExtractedConfidence] = useState('N/A');
 
+  // Secure Reader states
+  const [showSecureReader, setShowSecureReader] = useState(false);
+  const [readerFocusLost, setReaderFocusLost] = useState(false);
+
   // Broadcast channel
   const syncChannel = new BroadcastChannel('omnishield_sync');
 
@@ -54,6 +58,47 @@ export default function CenterDashboard({
     };
     return () => channel.close();
   }, []);
+
+  // Secure Reader window blur and focus listeners
+  useEffect(() => {
+    if (!showSecureReader) {
+      setReaderFocusLost(false);
+      return;
+    }
+
+    const handleBlur = () => {
+      setReaderFocusLost(true);
+      if (addSystemLog) {
+        addSystemLog(`[SECURITY ALERT] Reader lost focus at center ${currentUser.centerCode}. Screen locked.`);
+      }
+    };
+
+    const handleFocus = () => {
+      // Keep locked until manually reset to guarantee demo visual impact
+    };
+
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
+
+    const handleKeyDown = (e) => {
+      if (
+        (e.ctrlKey && (e.key === 'p' || e.key === 'P' || e.key === 's' || e.key === 'S' || e.key === 'c' || e.key === 'C' || e.key === 'u' || e.key === 'U')) ||
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && (e.key === 'i' || e.key === 'I' || e.key === 'c' || e.key === 'C' || e.key === 'j' || e.key === 'J'))
+      ) {
+        e.preventDefault();
+        alert("SECURITY WARNING: Copying, saving or printing is disabled in secure view mode.");
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showSecureReader]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -553,23 +598,145 @@ export default function CenterDashboard({
                 {variantResult || 'Enter a roll number to preview sequence seed'}
               </div>
 
-              <button
-                type="button"
-                onClick={() => handleDownloadPDF(rollNumber)}
-                disabled={!unlocked || !rollNumber}
-                className={`w-full py-2.5 rounded-lg font-semibold text-xs tracking-wider transition-all uppercase flex items-center justify-center gap-2 ${
-                  unlocked && rollNumber
-                    ? 'bg-green hover:bg-green/90 text-black cursor-pointer font-bold'
-                    : 'bg-bg3 border border-border text-text3 cursor-not-allowed'
-                }`}
-              >
-                <FileText className="w-4 h-4" />
-                Download Watermarked PDF
-              </button>
+              {/* Secure View and Download PDF button side-by-side */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadPDF(rollNumber)}
+                  disabled={!unlocked || !rollNumber}
+                  className={`py-2 px-2.5 rounded-lg font-semibold text-[10px] tracking-wider transition-all uppercase flex items-center justify-center gap-1.5 ${
+                    unlocked && rollNumber
+                      ? 'bg-green hover:bg-green/90 text-black cursor-pointer font-bold'
+                      : 'bg-bg3 border border-border text-text3 cursor-not-allowed'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  PDF Paper
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (unlocked && rollNumber) {
+                      setShowSecureReader(true);
+                      setReaderFocusLost(false);
+                    }
+                  }}
+                  disabled={!unlocked || !rollNumber}
+                  className={`py-2 px-2.5 rounded-lg font-semibold text-[10px] tracking-wider transition-all uppercase flex items-center justify-center gap-1.5 ${
+                    unlocked && rollNumber
+                      ? 'bg-blue hover:bg-blue/90 text-white cursor-pointer font-bold'
+                      : 'bg-bg3 border border-border text-text3 cursor-not-allowed'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Secure View
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* SECURE READ-ONLY VIEWER MODAL */}
+      {showSecureReader && (
+        <div 
+          className="secure-reader-overlay"
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {/* Header */}
+          <div className="secure-reader-header">
+            <div>
+              <div className="text-white font-bold font-display flex items-center gap-2 text-sm">
+                <ShieldCheck className="text-blue w-5 h-5" />
+                Confidential Exam Sheet — Read Only Mode
+              </div>
+              <p className="text-[10px] text-text2">
+                Center Code: <span className="text-white font-mono font-bold">{currentUser.centerCode}</span> | Shuffled Variant Seed: <span className="text-white font-mono">0x{hashRoll(rollNumber)}</span>
+              </p>
+            </div>
+            <button
+              onClick={() => setShowSecureReader(false)}
+              className="px-3 py-1 rounded bg-red/10 border border-red/30 text-red text-[11px] hover:bg-red/20 transition-all font-mono"
+            >
+              CLOSE SECURE VIEW
+            </button>
+          </div>
+
+          {/* Reader Body */}
+          <div className={`secure-reader-body ${readerFocusLost ? 'secure-blur-shield' : ''}`}>
+            
+            {/* Dynamic Watermark Overlay */}
+            <div className="secure-watermark-overlay">
+              {Array.from({ length: 45 }).map((_, idx) => (
+                <div key={idx} className="secure-watermark-cell">
+                  {currentUser.centerCode} · ROLL#{rollNumber} · READONLY
+                </div>
+              ))}
+            </div>
+
+            {/* Questions Content */}
+            <div className="space-y-6 relative z-10 select-none">
+              <div className="text-center mb-6">
+                <h3 className="text-white font-bold text-base font-display">NATIONAL TESTING AGENCY (NTA)</h3>
+                <p className="text-[10px] text-text2 uppercase tracking-widest font-mono">NEET (UG) 2026 - COMPUTER-ASSISTED SECURE READER</p>
+                <div className="h-[1px] bg-border/40 my-3" />
+              </div>
+
+              {(recentQuestions || []).length === 0 ? (
+                <div className="text-center text-text2 italic text-xs">No questions generated yet. Awaiting NTA paper generation...</div>
+              ) : (
+                getShuffledQuestions(recentQuestions, rollNumber).map((q, idx) => (
+                  <div key={idx} className="p-4 border border-border/50 rounded-lg bg-bg3 space-y-3">
+                    <div className="font-bold text-white flex gap-2 text-xs">
+                      <span className="text-blue font-mono">Q{idx + 1}.</span>
+                      <span className="leading-relaxed">{q.text}</span>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3 pl-6 pt-1">
+                      {(q.options || [
+                        { text: "A. Option A", correct: false },
+                        { text: "B. Option B", correct: false },
+                        { text: "C. Option C", correct: false },
+                        { text: "D. Option D", correct: false }
+                      ]).map((opt, optIdx) => (
+                        <div key={optIdx} className="text-text2 text-[10px] font-mono py-1.5 px-2 border border-border/20 rounded bg-bg2">
+                          {opt.text}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              <div className="text-center text-text3 font-mono text-[9px] pt-8">
+                *** END OF SECURE EXAM SHEET ***<br />
+                SCREEN AUDIT LOGGED · TIME STAMPED · PRINTING/COPYING BLOCKED
+              </div>
+            </div>
+          </div>
+
+          {/* Focus Lost Lockdown */}
+          {readerFocusLost && (
+            <div className="secure-lock-screen">
+              <ShieldAlert className="text-red w-12 h-12 mb-3 animate-bounce" />
+              <h4 className="text-red font-bold text-base font-display">SECURITY PROTOCOL ENGAGED</h4>
+              <p className="text-xs text-white max-w-sm leading-relaxed mt-2">
+                This secure window lost focus (e.g. screenshot tool activation, split screen resize, or external application click). 
+              </p>
+              <p className="text-[11px] text-text2 font-mono mt-1">
+                Security log dispatched to NTA Center Coordinator console.
+              </p>
+              <button
+                onClick={() => setReaderFocusLost(false)}
+                className="mt-4 px-4 py-2 bg-red hover:bg-red/90 text-white font-semibold text-xs rounded-lg transition-all uppercase"
+              >
+                Reset Shield & Resume View
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

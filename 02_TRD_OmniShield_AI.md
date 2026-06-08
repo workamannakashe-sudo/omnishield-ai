@@ -1,10 +1,6 @@
 # Technical Requirements Document (TRD)
 ## OmniShield AI - Examination Integrity Platform
 
-**Version:** 1.0  
-**Date:** June 2026  
-**Status:** Submission Ready
-
 ---
 
 ## 1. Technology Stack
@@ -436,7 +432,3 @@ const response = await invokeLLM({
 - PDF generation performance
 
 ---
-
-**Document Owner:** Technical Architecture  
-**Last Updated:** June 2026  
-**Next Review:** July 2026

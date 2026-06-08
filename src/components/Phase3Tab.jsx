@@ -1,24 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Upload } from 'lucide-react';
 
 export default function Phase3Tab({
   unlocked,
   setUnlocked,
   unlockLogs,
   setUnlockLogs,
-  addSystemLog
+  addSystemLog,
+  unlockedCenters,
+  papersPrinted
 }) {
   const [countdown, setCountdown] = useState(2698); // Starts at 00:44:58
   const [isUnlocking, setIsUnlocking] = useState(false);
-  const [currentStep, setCurrentStep] = useState(2); // Step 3 is active initially (index 2)
-  const [rollNumber, setRollNumber] = useState('');
-  const [variantResult, setVariantResult] = useState('');
-  const [isScanning, setIsScanning] = useState(false);
-  const [scanStatus, setScanStatus] = useState('EMBEDDED');
-  const [extractedRoll, setExtractedRoll] = useState('Awaiting Scan...');
-  const [extractedConfidence, setExtractedConfidence] = useState('N/A');
+  const [currentStep, setCurrentStep] = useState(2); // Step 3 is active initially
 
-  // Countdown clock ticker
+  // Broadcast channel
+  const syncChannel = new BroadcastChannel('omnishield_sync');
+
+  // Countdown timer
   useEffect(() => {
     const timer = setInterval(() => {
       setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
@@ -32,7 +30,6 @@ export default function Phase3Tab({
     return `00:${mins}:${secs}`;
   };
 
-  // 7 Unlock steps
   const steps = [
     { title: 'Encrypted bank pre-loaded on all edge servers', time: 'T-24h', status: 'done', icon: '✅' },
     { title: 'Backup paper armed and verified', time: 'T-2h', status: 'done', icon: '✅' },
@@ -45,19 +42,24 @@ export default function Phase3Tab({
 
   const [stepsStates, setStepsStates] = useState(steps);
 
-  const runUnlockSequence = () => {
+  const handleTriggerBroadcast = () => {
     if (isUnlocking || unlocked) return;
     setIsUnlocking(true);
-    addSystemLog('Phase 3: Initializing Edge Node decrypt payload sequence.');
+    setCurrentStep(2);
+    setUnlockLogs([]);
+    addSystemLog('NTA Core: Triggering satellite token unlock broadcast.');
 
-    let step = 2; // Start from Step 3 (index 2)
+    // Broadcast the unlock token to all listening center tabs in real-time
+    syncChannel.postMessage({ type: 'UNLOCK_BROADCAST' });
+
+    let step = 2; // Start from Step 3
     const interval = setInterval(() => {
       step++;
+      setCurrentStep(step);
       
-      // Update step status in list
+      // Update step status in NTA list
       setStepsStates(prev => {
         const copy = [...prev];
-        // Mark previous step as done
         copy[step - 1] = { ...copy[step - 1], status: 'done', icon: '✅' };
         if (step < 7) {
           copy[step] = { ...copy[step], status: 'active', icon: '📡' };
@@ -66,11 +68,11 @@ export default function Phase3Tab({
       });
 
       if (step === 3) {
-        addSystemLog('Edge Decryption: Decrypted central question bank package successfully.');
+        setUnlockLogs(prev => [...prev, 'Satellite Signal: Broadcasting 32-byte decrypt token...']);
       } else if (step === 4) {
-        addSystemLog('Watermarking: High-frequency sub-band watermarks injected via DWT.');
-      } else if (step === 5) {
-        addSystemLog('Edge Printer: Compiling offline document layouts.');
+        setUnlockLogs(prev => [...prev, 'GSM Cell-Broadcast: Relaying fallback channels...']);
+      } else if (step === 6) {
+        setUnlockLogs(prev => [...prev, 'Broadcast Sync: Core unlocked. Monitoring print spoolers...']);
       }
 
       if (step === 7) {
@@ -78,74 +80,31 @@ export default function Phase3Tab({
         setTimeout(() => {
           setIsUnlocking(false);
           setUnlocked(true);
-          addSystemLog('SUCCESS: Edge server printing core ready. 5,000 nodes decrypted.');
+          setUnlockLogs(prev => [...prev, 'NTA Core Status: Central satellite broadcast completed.']);
+          addSystemLog('SUCCESS: Unlock broadcast sent. Local edge centers decrypting.');
+          setCurrentStep(-1);
         }, 500);
       }
     }, 900);
   };
 
-  // Run watermark scan simulation
-  const runWatermark = () => {
-    if (isScanning) return;
-    setIsScanning(true);
-    setScanStatus('SCANNING...');
-    setExtractedRoll('Parsing DWT bands...');
-    setExtractedConfidence('Scanning SVD values...');
-    addSystemLog('FORENSICS: Extracting student roll number watermark from printed sheet.');
-
-    setTimeout(() => {
-      setIsScanning(false);
-      setScanStatus('EXTRACTED');
-      setExtractedRoll('ROLL#2024001');
-      setExtractedConfidence('99.7%');
-      addSystemLog('FORENSICS MATCH: Successfully extracted student ID ROLL#2024001.');
-    }, 2000);
-  };
-
-  // Generate roll layout variant seed
-  const showVariant = (val) => {
-    setRollNumber(val);
-    if (!val) {
-      setVariantResult('Enter a roll number to preview sequence seed');
-      return;
-    }
-
-    let hash = 0;
-    for (let i = 0; i < val.length; i++) {
-      hash = val.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    
-    const baseQuestions = Array.from({ length: 10 }, (_, i) => i + 1);
-    const randomized = [];
-    const temp = [...baseQuestions];
-    
-    let seed = Math.abs(hash);
-    while (temp.length > 0) {
-      seed = (seed * 9301 + 49297) % 233280;
-      const index = seed % temp.length;
-      randomized.push('Q' + temp.splice(index, 1)[0]);
-    }
-
-    setVariantResult(`Sequence seed: ${randomized.join(' → ')} | Checksum: 0x${Math.abs(hash).toString(16).substring(0, 4).toUpperCase()}`);
-  };
-
   return (
     <div className="grid-main">
-      {/* Left Column: Unlock protocol and DWT scan */}
+      {/* Left Column: Central Broadcast Console */}
       <div className="flex flex-col gap-3">
-        {/* Unlock Steps */}
+        {/* Central broadcast stepper */}
         <div className="panel">
           <div className="panel-header">
             <div className="panel-title">
-              <div className="dot" style={{ backgroundColor: 'var(--blue)', animation: 'pulse-glow 1.5s infinite' }} />
-              Exam Day Unlock Protocol
+              <div className="dot" style={{ backgroundColor: unlocked ? 'var(--green)' : 'var(--blue)', animation: 'pulse-glow 1.5s infinite' }} />
+              NTA Unlock Broadcast Console
             </div>
             <button 
-              onClick={runUnlockSequence}
+              onClick={handleTriggerBroadcast}
               disabled={isUnlocking || unlocked}
               className="px-3 py-1 rounded bg-blue/10 border border-blue/30 text-blue text-[11px] font-semibold hover:bg-blue/20 transition-all font-display disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {unlocked ? 'DECRYPTED' : isUnlocking ? 'DECRYPTING...' : 'Receive Unlock Token'}
+              {unlocked ? 'BROADCAST COMPLETED' : isUnlocking ? 'BROADCASTING...' : 'Broadcast Unlock Token'}
             </button>
           </div>
           <div className="panel-body">
@@ -167,74 +126,26 @@ export default function Phase3Tab({
           </div>
         </div>
 
-        {/* Watermark Demo */}
+        {/* Sync logs terminal */}
         <div className="panel">
           <div className="panel-header">
             <div className="panel-title">
-              <div className="dot" style={{ backgroundColor: 'var(--green)' }} />
-              DWT-SVD Watermark Demo
+              <div className="dot" style={{ backgroundColor: 'var(--blue)' }} />
+              Central Link Broadcast Terminal
             </div>
-            <button 
-              onClick={runWatermark}
-              disabled={isScanning}
-              className="px-3 py-1 rounded bg-green/10 border border-green/30 text-green text-[11px] font-semibold hover:bg-green/20 transition-all font-display disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Extract from Photo
-            </button>
           </div>
           <div className="panel-body">
-            <div className="grid grid-cols-2 gap-3 items-start">
-              <div>
-                <div className="text-[10px] text-text2 font-mono mb-1.5 uppercase">PRINTED PAPER</div>
-                <div className="wm-paper border border-border relative rounded bg-white">
-                  {isScanning && (
-                    <div className="absolute inset-x-0 h-1 bg-blue scanner-bar" />
-                  )}
-                  <div className="wm-overlay select-none" id="wm-overlay">ROLL#2024001</div>
-                  <div className="wm-paper-text select-none">
-                    Q1. Which enzyme unwinds...<br />
-                    (A) Primase (B) Helicase<br />
-                    (C) DNA Pol I (D) Ligase<br /><br />
-                    Q2. In meiosis-I, homologous...<br />
-                    (A) Anaphase (B) Metaphase<br />
-                    (C) Prophase (D) Telophase<br /><br />
-                    Q3. Which of the following...<br />
-                    [continued...]
-                  </div>
+            <div className="terminal-window h-36 overflow-y-auto">
+              <div className="terminal-line text-text3">[CENTRAL SATELLITE BROADCAST CHANNEL ISRO-SAT3]</div>
+              {unlockLogs.map((log, i) => (
+                <div key={i} className="terminal-line text-text2 font-mono">
+                  <span className="text-text3">&gt;&gt;</span>
+                  <span>{log}</span>
                 </div>
-              </div>
-              
-              <div>
-                <div className="text-[10px] text-text2 font-mono mb-1.5 uppercase">EXTRACTION RESULT</div>
-                <div className="bg-bg3 border border-border rounded-lg p-3 space-y-3">
-                  <div>
-                    <div className="text-[9px] text-text3 font-mono uppercase">Status</div>
-                    <div className={`badge ${scanStatus === 'EXTRACTED' ? 'badge-green' : scanStatus === 'SCANNING...' ? 'badge-blue' : 'badge-gray'} mt-1`}>
-                      {scanStatus}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[9px] text-text3 font-mono uppercase">Extracted ID</div>
-                    <div id="wm-id" className="font-mono text-sm text-green font-semibold mt-0.5">
-                      {extractedRoll}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/40">
-                    <div>
-                      <div className="text-[9px] text-text3 font-mono uppercase">Confidence</div>
-                      <div className="font-mono text-white text-xs mt-0.5" id="wm-conf">
-                        {extractedConfidence}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[9px] text-text3 font-mono uppercase">Hash match</div>
-                      <div className="font-mono text-green text-[9px] mt-0.5" id="wm-hash">
-                        {scanStatus === 'EXTRACTED' ? 'SHA256 ✓ a8f3d1c...' : 'N/A'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              ))}
+              {!isUnlocking && !unlocked && (
+                <div className="text-text3 italic text-[11px] mt-1">Awaiting manual operator trigger to release token...</div>
+              )}
             </div>
           </div>
         </div>
@@ -258,17 +169,18 @@ export default function Phase3Tab({
             
             <div className="h-[1px] bg-border my-3" />
             
+            {/* Real-time synchronization numbers */}
             <div className="grid grid-cols-2 gap-2 text-[11px]">
               <div className="bg-bg3 border border-border p-2 rounded">
                 <div className="text-[9px] text-text3 font-mono mb-0.5">CENTERS UNLOCKED</div>
-                <div className="text-white font-mono font-semibold">
-                  {unlocked ? '5,000 / 5,000' : '0 / 5,000'}
+                <div className="text-green font-mono font-bold">
+                  {unlockedCenters.length} / 5,000
                 </div>
               </div>
               <div className="bg-bg3 border border-border p-2 rounded">
                 <div className="text-[9px] text-text3 font-mono mb-0.5">PAPERS PRINTED</div>
-                <div className="text-white font-mono font-semibold">
-                  {unlocked ? '2.4M / 2.4M' : '0 / 2.4M'}
+                <div className="text-blue font-mono font-bold">
+                  {papersPrinted.toLocaleString()}
                 </div>
               </div>
             </div>
@@ -300,28 +212,22 @@ export default function Phase3Tab({
           </div>
         </div>
 
-        {/* Student variant */}
+        {/* Live sync edge nodes */}
         <div className="panel">
           <div className="panel-header">
-            <div className="panel-title">Student Paper Variant</div>
+            <div className="panel-title">Synchronized Edge Server Nodes</div>
           </div>
-          <div className="panel-body space-y-2">
-            <div className="text-[11px] text-text2 leading-relaxed">
-              Unique question order per student — prevents physical copying
-            </div>
-            <input 
-              value={rollNumber}
-              onChange={(e) => showVariant(e.target.value)}
-              className="inp" 
-              id="roll-inp" 
-              placeholder="Enter roll number..." 
-            />
-            <div 
-              id="variant-out" 
-              className="font-mono text-[10px] text-green min-h-[32px] p-2 bg-bg3 rounded border border-border leading-relaxed break-all"
-            >
-              {variantResult || 'Enter a roll number to preview sequence seed'}
-            </div>
+          <div className="panel-body space-y-2 max-h-48 overflow-y-auto font-mono text-[10px]">
+            {unlockedCenters.length === 0 ? (
+              <div className="text-text3 italic">No edge nodes synchronized yet. Awaiting satellite token unlock...</div>
+            ) : (
+              unlockedCenters.map((code, idx) => (
+                <div key={idx} className="flex justify-between items-center py-1 border-b border-border/30 text-green">
+                  <span className="font-semibold">{code}</span>
+                  <span className="text-[9px] badge badge-green font-mono">UNLOCKED & SYNCED</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

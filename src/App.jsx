@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import AuthPortal from './components/AuthPortal';
 import OverviewTab from './components/OverviewTab';
 import Phase1Tab from './components/Phase1Tab';
 import Phase2Tab from './components/Phase2Tab';
 import Phase3Tab from './components/Phase3Tab';
+import CenterDashboard from './components/CenterDashboard';
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [clockTime, setClockTime] = useState('08:14:32 IST');
 
@@ -12,8 +15,12 @@ export default function App() {
   const [totalQuestions, setTotalQuestions] = useState(4872);
   const [threatLevel, setThreatLevel] = useState('Condition Green');
   const [threatCount, setThreatCount] = useState(3);
+  
+  // Real-time dynamic stats compiled from Center events
+  const [unlockedCenters, setUnlockedCenters] = useState([]);
+  const [papersPrinted, setPapersPrinted] = useState(0);
 
-  // Bloom's taxonomy percentages (start state)
+  // Bloom's taxonomy percentages
   const [difficultyData, setDifficultyData] = useState([
     { name: 'L1 Remember', value: 12 },
     { name: 'L2 Understand', value: 18 },
@@ -22,7 +29,7 @@ export default function App() {
     { name: 'L5/L6 Evaluate+', value: 18 }
   ]);
 
-  // Subject coverage percentages (start state)
+  // Subject coverage percentages
   const [subjectData, setSubjectData] = useState([
     { name: 'Biology', value: 45 },
     { name: 'Chemistry', value: 35 },
@@ -94,7 +101,7 @@ export default function App() {
   const [unlocked, setUnlocked] = useState(false);
   const [unlockLogs, setUnlockLogs] = useState([]);
 
-  // Audit Logs (Terminal) - 4-second auto-update logs
+  // Audit Logs (Terminal)
   const [systemLogs, setSystemLogs] = useState([
     '[08:14:31] [SYS] Agent-B validated Q#4872 — APPROVED [Bloom L3]',
     '[08:14:29] [SYS] Edge server IN-MH-042 pinged heartbeat — OK',
@@ -105,6 +112,9 @@ export default function App() {
     '[08:13:58] [SYS] Satellite channel ISRO-SAT3 connected',
     '[08:13:44] [SYS] Q#4870 discarded — similarity 0.91 > threshold'
   ]);
+
+  // Broadcast channel helper
+  const syncChannel = new BroadcastChannel('omnishield_sync');
 
   // Function to add new log with timestamp
   const addSystemLog = (message) => {
@@ -122,6 +132,88 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  // Broadcast real-time events on state updates
+  useEffect(() => {
+    if (currentUser?.role === 'nta') {
+      // NTA publishes its current state to listening centers
+      syncChannel.postMessage({
+        type: 'NTA_STATE_UPDATE',
+        payload: {
+          totalQuestions,
+          threatLevel,
+          threatSignals,
+          backupPaperArmed
+        }
+      });
+    }
+  }, [totalQuestions, threatLevel, threatSignals, backupPaperArmed, currentUser]);
+
+  // Listen for BroadcastChannel events
+  useEffect(() => {
+    const channel = new BroadcastChannel('omnishield_sync');
+    
+    channel.onmessage = (event) => {
+      const { type, payload } = event.data;
+      
+      switch (type) {
+        case 'NTA_STATE_UPDATE':
+          if (currentUser?.role === 'center') {
+            setTotalQuestions(payload.totalQuestions);
+            setThreatLevel(payload.threatLevel);
+            setThreatSignals(payload.threatSignals);
+            setBackupPaperArmed(payload.backupPaperArmed);
+          }
+          break;
+          
+        case 'QUESTION_GENERATED_SYNC':
+          setTotalQuestions(payload.totalQuestions);
+          setRecentQuestions(payload.recentQuestions);
+          setDifficultyData(payload.difficultyData);
+          setSubjectData(payload.subjectData);
+          break;
+
+        case 'ALERT_TRIGGERED_SYNC':
+          setThreatLevel('Condition Red');
+          setThreatCount(payload.threatCount);
+          setThreatSignals(payload.threatSignals);
+          break;
+
+        case 'BACKUP_TRIGGERED_SYNC':
+          setBackupPaperArmed(true);
+          setThreatLevel('Condition Green (Secured)');
+          setThreatSignals(payload.threatSignals);
+          break;
+
+        case 'UNLOCK_BROADCAST':
+          // Center receiver triggers decryption
+          if (currentUser?.role === 'center') {
+            setUnlocked(true);
+          }
+          break;
+
+        case 'CENTER_UNLOCKED':
+          // NTA Operator aggregates unlocking centers
+          setUnlockedCenters(prev => {
+            if (prev.includes(payload.centerCode)) return prev;
+            return [...prev, payload.centerCode];
+          });
+          addSystemLog(`[SATELLITE] Sync Confirmed: Node ${payload.centerCode} Decrypted offline successfully.`);
+          break;
+
+        case 'CENTER_PRINTED':
+          // NTA Operator aggregates printed candidate paper counts
+          setPapersPrinted(prev => prev + payload.count);
+          addSystemLog(`[PRINTER] Sync Confirmed: Node ${payload.centerCode} printed ${payload.count} watermarked sheets.`);
+          break;
+          
+        default:
+          break;
+      }
+    };
+
+    return () => channel.close();
+  }, [currentUser]);
+
   // Auto-appending logs simulation (every 4 seconds)
   useEffect(() => {
     const logPool = [
@@ -136,14 +228,41 @@ export default function App() {
     ];
 
     const interval = setInterval(() => {
-      const randomLog = logPool[Math.floor(Math.random() * logPool.length)];
-      addSystemLog(randomLog);
-    }, 4000); // Exact 4-second interval
+      // Only stream logs if logged in as NTA Operator
+      if (currentUser?.role === 'nta') {
+        const randomLog = logPool[Math.floor(Math.random() * logPool.length)];
+        addSystemLog(randomLog);
+      }
+    }, 4000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [currentUser]);
 
-  // Render current active tab component
+  const handleLogout = () => {
+    setCurrentUser(null);
+    setActiveTab('overview');
+  };
+
+  // If not authenticated, render login gateway
+  if (!currentUser) {
+    return <AuthPortal onLoginSuccess={setCurrentUser} />;
+  }
+
+  // If logged in as Center Coordinator, render local center dashboard
+  if (currentUser.role === 'center') {
+    return (
+      <CenterDashboard 
+        currentUser={currentUser} 
+        onLogout={handleLogout}
+        totalQuestions={totalQuestions}
+        unlocked={unlocked}
+        setUnlocked={setUnlocked}
+        addSystemLog={addSystemLog}
+      />
+    );
+  }
+
+  // Render NTA Admin Dashboard Layout
   const renderTabContent = () => {
     switch (activeTab) {
       case 'overview':
@@ -159,7 +278,19 @@ export default function App() {
         return (
           <Phase1Tab 
             totalQuestions={totalQuestions}
-            setTotalQuestions={setTotalQuestions}
+            setTotalQuestions={(val) => {
+              setTotalQuestions(val);
+              // Broadcast update
+              syncChannel.postMessage({
+                type: 'QUESTION_GENERATED_SYNC',
+                payload: {
+                  totalQuestions: typeof val === 'function' ? val(totalQuestions) : val,
+                  recentQuestions,
+                  difficultyData,
+                  subjectData
+                }
+              });
+            }}
             difficultyData={difficultyData}
             setDifficultyData={setDifficultyData}
             subjectData={subjectData}
@@ -173,13 +304,29 @@ export default function App() {
         return (
           <Phase2Tab 
             threatLevel={threatLevel}
-            setThreatLevel={setThreatLevel}
+            setThreatLevel={(val) => {
+              setThreatLevel(val);
+              if (val === 'Condition Red') {
+                syncChannel.postMessage({
+                  type: 'ALERT_TRIGGERED_SYNC',
+                  payload: { threatCount: threatCount + 1, threatSignals }
+                });
+              }
+            }}
             threatCount={threatCount}
             setThreatCount={setThreatCount}
             threatSignals={threatSignals}
             setThreatSignals={setThreatSignals}
             backupPaperArmed={backupPaperArmed}
-            setBackupPaperArmed={setBackupPaperArmed}
+            setBackupPaperArmed={(val) => {
+              setBackupPaperArmed(val);
+              if (val) {
+                syncChannel.postMessage({
+                  type: 'BACKUP_TRIGGERED_SYNC',
+                  payload: { threatSignals }
+                });
+              }
+            }}
             backupStep1={backupStep1}
             setBackupStep1={setBackupStep1}
             backupStep2={backupStep2}
@@ -195,6 +342,8 @@ export default function App() {
             unlockLogs={unlockLogs}
             setUnlockLogs={setUnlockLogs}
             addSystemLog={addSystemLog}
+            unlockedCenters={unlockedCenters}
+            papersPrinted={papersPrinted}
           />
         );
       default:
@@ -224,6 +373,12 @@ export default function App() {
             {threatLevel === 'Condition Red' ? 'SYSTEM THREAT DETECTED' : 'SYSTEM NOMINAL'}
           </div>
           <div className="nav-time font-mono text-[11px]" id="clock">{clockTime}</div>
+          <button 
+            onClick={handleLogout}
+            className="ml-2 px-2.5 py-1 rounded bg-bg3 border border-border text-[10px] text-text2 hover:text-white transition-all font-mono uppercase"
+          >
+            Sign Out
+          </button>
         </div>
       </div>
 

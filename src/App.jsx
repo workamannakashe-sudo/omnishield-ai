@@ -5,6 +5,12 @@ import Phase1Tab from './components/Phase1Tab';
 import Phase2Tab from './components/Phase2Tab';
 import Phase3Tab from './components/Phase3Tab';
 import CenterDashboard from './components/CenterDashboard';
+import { 
+  isFirebaseConnected, 
+  subscribeFirebaseStatus, 
+  writeDbState, 
+  subscribeDbState 
+} from './firebase';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -19,6 +25,9 @@ export default function App() {
   // Real-time dynamic stats compiled from Center events
   const [unlockedCenters, setUnlockedCenters] = useState([]);
   const [papersPrinted, setPapersPrinted] = useState(0);
+  
+  // Cloud sync status state
+  const [isCloudSync, setIsCloudSync] = useState(false);
 
   // Bloom's taxonomy percentages
   const [difficultyData, setDifficultyData] = useState([
@@ -44,7 +53,13 @@ export default function App() {
       subject: 'Biology',
       bloom: 'L4 Analyse',
       similarity: '14.5%',
-      timestamp: '08:10:12 AM'
+      timestamp: '08:10:12 AM',
+      options: [
+        { text: "A. 40S and 60S subunit scanning", correct: true },
+        { text: "B. 30S and 50S prokaryotic binding", correct: false },
+        { text: "C. 80S direct initiation bypass", correct: false },
+        { text: "D. 70S mono-cistronic translation", correct: false }
+      ]
     },
     {
       id: 'PHYS-2026-H4',
@@ -52,7 +67,13 @@ export default function App() {
       subject: 'Physics',
       bloom: 'L3 Apply',
       similarity: '18.1%',
-      timestamp: '08:08:45 AM'
+      timestamp: '08:08:45 AM',
+      options: [
+        { text: "A. μ0 I / (2R)", correct: true },
+        { text: "B. μ0 I / (4πR)", correct: false },
+        { text: "C. μ0 I R^2", correct: false },
+        { text: "D. Zero", correct: false }
+      ]
     },
     {
       id: 'CHEM-2026-F9',
@@ -60,7 +81,13 @@ export default function App() {
       subject: 'Chemistry',
       bloom: 'L1 Remember',
       similarity: '9.2%',
-      timestamp: '08:05:33 AM'
+      timestamp: '08:05:33 AM',
+      options: [
+        { text: "A. o- and p-chlorotoluene", correct: true },
+        { text: "B. m-chlorotoluene", correct: false },
+        { text: "C. Benzyl chloride", correct: false },
+        { text: "D. Benzal chloride", correct: false }
+      ]
     }
   ]);
 
@@ -132,23 +159,57 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // Broadcast real-time events on state updates
+  // Subscribe to Firebase Cloud Sync status
   useEffect(() => {
-    if (currentUser?.role === 'nta') {
-      // NTA publishes its current state to listening centers
-      syncChannel.postMessage({
-        type: 'NTA_STATE_UPDATE',
-        payload: {
-          totalQuestions,
-          threatLevel,
-          threatSignals,
-          backupPaperArmed
-        }
-      });
-    }
-  }, [totalQuestions, threatLevel, threatSignals, backupPaperArmed, currentUser]);
+    return subscribeFirebaseStatus((status) => {
+      setIsCloudSync(status);
+    });
+  }, []);
 
-  // Listen for BroadcastChannel events
+  // Listen to Firebase State updates
+  useEffect(() => {
+    const unsubscribe = subscribeDbState('omnishield_state', (data) => {
+      if (!data) return;
+      
+      if (data.totalQuestions !== undefined) {
+        setTotalQuestions(prev => prev !== data.totalQuestions ? data.totalQuestions : prev);
+      }
+      if (data.threatLevel !== undefined) {
+        setThreatLevel(prev => prev !== data.threatLevel ? data.threatLevel : prev);
+      }
+      if (data.threatCount !== undefined) {
+        setThreatCount(prev => prev !== data.threatCount ? data.threatCount : prev);
+      }
+      if (data.threatSignals !== undefined) {
+        setThreatSignals(prev => JSON.stringify(prev) !== JSON.stringify(data.threatSignals) ? data.threatSignals : prev);
+      }
+      if (data.backupPaperArmed !== undefined) {
+        setBackupPaperArmed(prev => prev !== data.backupPaperArmed ? data.backupPaperArmed : prev);
+      }
+      if (data.unlocked !== undefined) {
+        setUnlocked(prev => prev !== data.unlocked ? data.unlocked : prev);
+      }
+      if (data.unlockedCenters !== undefined) {
+        setUnlockedCenters(prev => JSON.stringify(prev) !== JSON.stringify(data.unlockedCenters) ? data.unlockedCenters : prev);
+      }
+      if (data.papersPrinted !== undefined) {
+        setPapersPrinted(prev => prev !== data.papersPrinted ? data.papersPrinted : prev);
+      }
+      if (data.recentQuestions !== undefined) {
+        setRecentQuestions(prev => JSON.stringify(prev) !== JSON.stringify(data.recentQuestions) ? data.recentQuestions : prev);
+      }
+      if (data.difficultyData !== undefined) {
+        setDifficultyData(prev => JSON.stringify(prev) !== JSON.stringify(data.difficultyData) ? data.difficultyData : prev);
+      }
+      if (data.subjectData !== undefined) {
+        setSubjectData(prev => JSON.stringify(prev) !== JSON.stringify(data.subjectData) ? data.subjectData : prev);
+      }
+    });
+    
+    return () => unsubscribe();
+  }, []);
+
+  // Local tab sync via BroadcastChannel as a fallback/redundant link
   useEffect(() => {
     const channel = new BroadcastChannel('omnishield_sync');
     
@@ -156,6 +217,40 @@ export default function App() {
       const { type, payload } = event.data;
       
       switch (type) {
+        case 'TOTAL_QUESTIONS_SYNC':
+          setTotalQuestions(payload);
+          break;
+        case 'DIFFICULTY_DATA_SYNC':
+          setDifficultyData(payload);
+          break;
+        case 'SUBJECT_DATA_SYNC':
+          setSubjectData(payload);
+          break;
+        case 'RECENT_QUESTIONS_SYNC':
+          setRecentQuestions(payload);
+          break;
+        case 'THREAT_LEVEL_SYNC':
+          setThreatLevel(payload);
+          break;
+        case 'THREAT_COUNT_SYNC':
+          setThreatCount(payload);
+          break;
+        case 'THREAT_SIGNALS_SYNC':
+          setThreatSignals(payload);
+          break;
+        case 'BACKUP_PAPER_ARMED_SYNC':
+          setBackupPaperArmed(payload);
+          break;
+        case 'UNLOCKED_SYNC':
+          setUnlocked(payload);
+          break;
+        case 'UNLOCKED_CENTERS_SYNC':
+          setUnlockedCenters(payload);
+          break;
+        case 'PAPERS_PRINTED_SYNC':
+          setPapersPrinted(payload);
+          break;
+
         case 'NTA_STATE_UPDATE':
           if (currentUser?.role === 'center') {
             setTotalQuestions(payload.totalQuestions);
@@ -185,14 +280,12 @@ export default function App() {
           break;
 
         case 'UNLOCK_BROADCAST':
-          // Center receiver triggers decryption
           if (currentUser?.role === 'center') {
             setUnlocked(true);
           }
           break;
 
         case 'CENTER_UNLOCKED':
-          // NTA Operator aggregates unlocking centers
           setUnlockedCenters(prev => {
             if (prev.includes(payload.centerCode)) return prev;
             return [...prev, payload.centerCode];
@@ -201,7 +294,6 @@ export default function App() {
           break;
 
         case 'CENTER_PRINTED':
-          // NTA Operator aggregates printed candidate paper counts
           setPapersPrinted(prev => prev + payload.count);
           addSystemLog(`[PRINTER] Sync Confirmed: Node ${payload.centerCode} printed ${payload.count} watermarked sheets.`);
           break;
@@ -213,6 +305,97 @@ export default function App() {
 
     return () => channel.close();
   }, [currentUser]);
+
+  // Synced Wrapper State Setters
+  const setTotalQuestionsSynced = (val) => {
+    setTotalQuestions((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      writeDbState('omnishield_state/totalQuestions', next);
+      syncChannel.postMessage({ type: 'TOTAL_QUESTIONS_SYNC', payload: next });
+      return next;
+    });
+  };
+
+  const setDifficultyDataSynced = (val) => {
+    setDifficultyData((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      writeDbState('omnishield_state/difficultyData', next);
+      syncChannel.postMessage({ type: 'DIFFICULTY_DATA_SYNC', payload: next });
+      return next;
+    });
+  };
+
+  const setSubjectDataSynced = (val) => {
+    setSubjectData((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      writeDbState('omnishield_state/subjectData', next);
+      syncChannel.postMessage({ type: 'SUBJECT_DATA_SYNC', payload: next });
+      return next;
+    });
+  };
+
+  const setRecentQuestionsSynced = (val) => {
+    setRecentQuestions((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      writeDbState('omnishield_state/recentQuestions', next);
+      syncChannel.postMessage({ type: 'RECENT_QUESTIONS_SYNC', payload: next });
+      return next;
+    });
+  };
+
+  const setThreatLevelSynced = (val) => {
+    setThreatLevel(val);
+    writeDbState('omnishield_state/threatLevel', val);
+    syncChannel.postMessage({ type: 'THREAT_LEVEL_SYNC', payload: val });
+  };
+
+  const setThreatCountSynced = (val) => {
+    setThreatCount((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      writeDbState('omnishield_state/threatCount', next);
+      syncChannel.postMessage({ type: 'THREAT_COUNT_SYNC', payload: next });
+      return next;
+    });
+  };
+
+  const setThreatSignalsSynced = (val) => {
+    setThreatSignals((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      writeDbState('omnishield_state/threatSignals', next);
+      syncChannel.postMessage({ type: 'THREAT_SIGNALS_SYNC', payload: next });
+      return next;
+    });
+  };
+
+  const setBackupPaperArmedSynced = (val) => {
+    setBackupPaperArmed(val);
+    writeDbState('omnishield_state/backupPaperArmed', val);
+    syncChannel.postMessage({ type: 'BACKUP_PAPER_ARMED_SYNC', payload: val });
+  };
+
+  const setUnlockedSynced = (val) => {
+    setUnlocked(val);
+    writeDbState('omnishield_state/unlocked', val);
+    syncChannel.postMessage({ type: 'UNLOCKED_SYNC', payload: val });
+  };
+
+  const setUnlockedCentersSynced = (val) => {
+    setUnlockedCenters((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      writeDbState('omnishield_state/unlockedCenters', next);
+      syncChannel.postMessage({ type: 'UNLOCKED_CENTERS_SYNC', payload: next });
+      return next;
+    });
+  };
+
+  const setPapersPrintedSynced = (val) => {
+    setPapersPrinted((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      writeDbState('omnishield_state/papersPrinted', next);
+      syncChannel.postMessage({ type: 'PAPERS_PRINTED_SYNC', payload: next });
+      return next;
+    });
+  };
 
   // Auto-appending logs simulation (every 4 seconds)
   useEffect(() => {
@@ -256,8 +439,10 @@ export default function App() {
         onLogout={handleLogout}
         totalQuestions={totalQuestions}
         unlocked={unlocked}
-        setUnlocked={setUnlocked}
+        setUnlocked={setUnlockedSynced}
         addSystemLog={addSystemLog}
+        recentQuestions={recentQuestions}
+        isCloudSync={isCloudSync}
       />
     );
   }
@@ -278,25 +463,13 @@ export default function App() {
         return (
           <Phase1Tab 
             totalQuestions={totalQuestions}
-            setTotalQuestions={(val) => {
-              setTotalQuestions(val);
-              // Broadcast update
-              syncChannel.postMessage({
-                type: 'QUESTION_GENERATED_SYNC',
-                payload: {
-                  totalQuestions: typeof val === 'function' ? val(totalQuestions) : val,
-                  recentQuestions,
-                  difficultyData,
-                  subjectData
-                }
-              });
-            }}
+            setTotalQuestions={setTotalQuestionsSynced}
             difficultyData={difficultyData}
-            setDifficultyData={setDifficultyData}
+            setDifficultyData={setDifficultyDataSynced}
             subjectData={subjectData}
-            setSubjectData={setSubjectData}
+            setSubjectData={setSubjectDataSynced}
             recentQuestions={recentQuestions}
-            setRecentQuestions={setRecentQuestions}
+            setRecentQuestions={setRecentQuestionsSynced}
             addSystemLog={addSystemLog}
           />
         );
@@ -304,29 +477,13 @@ export default function App() {
         return (
           <Phase2Tab 
             threatLevel={threatLevel}
-            setThreatLevel={(val) => {
-              setThreatLevel(val);
-              if (val === 'Condition Red') {
-                syncChannel.postMessage({
-                  type: 'ALERT_TRIGGERED_SYNC',
-                  payload: { threatCount: threatCount + 1, threatSignals }
-                });
-              }
-            }}
+            setThreatLevel={setThreatLevelSynced}
             threatCount={threatCount}
-            setThreatCount={setThreatCount}
+            setThreatCount={setThreatCountSynced}
             threatSignals={threatSignals}
-            setThreatSignals={setThreatSignals}
+            setThreatSignals={setThreatSignalsSynced}
             backupPaperArmed={backupPaperArmed}
-            setBackupPaperArmed={(val) => {
-              setBackupPaperArmed(val);
-              if (val) {
-                syncChannel.postMessage({
-                  type: 'BACKUP_TRIGGERED_SYNC',
-                  payload: { threatSignals }
-                });
-              }
-            }}
+            setBackupPaperArmed={setBackupPaperArmedSynced}
             backupStep1={backupStep1}
             setBackupStep1={setBackupStep1}
             backupStep2={backupStep2}
@@ -338,7 +495,7 @@ export default function App() {
         return (
           <Phase3Tab 
             unlocked={unlocked}
-            setUnlocked={setUnlocked}
+            setUnlocked={setUnlockedSynced}
             unlockLogs={unlockLogs}
             setUnlockLogs={setUnlockLogs}
             addSystemLog={addSystemLog}
@@ -368,6 +525,14 @@ export default function App() {
           </div>
         </div>
         <div className="nav-right">
+          {/* Cloud Sync Status Indicator */}
+          <div className="nav-status font-mono text-[10px] bg-bg3 border border-border px-2 py-0.5 rounded flex items-center gap-1.5">
+            <div className={`w-1.5 h-1.5 rounded-full ${isCloudSync ? 'bg-green animate-pulse' : 'bg-blue'}`} />
+            <span className={isCloudSync ? 'text-green' : 'text-blue-400'}>
+              {isCloudSync ? 'CLOUD SYNC ACTIVE' : 'LOCAL TAB SYNC'}
+            </span>
+          </div>
+          
           <div className="nav-status font-mono text-[11px]">
             <div className={`pulse-dot ${threatLevel === 'Condition Red' ? 'bg-red' : 'bg-green'}`} />
             {threatLevel === 'Condition Red' ? 'SYSTEM THREAT DETECTED' : 'SYSTEM NOMINAL'}

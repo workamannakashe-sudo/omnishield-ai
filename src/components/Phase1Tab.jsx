@@ -148,6 +148,18 @@ export default function Phase1Tab({
           setPipelineRunning(false);
           setTotalQuestions(prev => prev + 1);
           setActiveQuestion(newQ);
+          setRecentQuestions(prev => [
+            {
+              id: `${newQ.subject.substring(0, 4).toUpperCase()}-2026-${Math.floor(Math.random() * 900 + 100)}`,
+              text: newQ.text,
+              subject: newQ.subject,
+              bloom: newQ.bloom,
+              similarity: newQ.similarity,
+              timestamp: new Date().toTimeString().slice(0, 8),
+              options: newQ.options
+            },
+            ...prev
+          ]);
 
           // Update Bloom's taxonomy bars dynamically
           setDifficultyData(prev => {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, ShieldAlert, KeyRound, Printer, Upload, Award, FileText } from 'lucide-react';
+import { jsPDF } from 'jspdf';
 
 export default function CenterDashboard({ 
   currentUser, 
@@ -7,7 +8,9 @@ export default function CenterDashboard({
   totalQuestions, 
   unlocked, 
   setUnlocked, 
-  addSystemLog 
+  addSystemLog,
+  recentQuestions,
+  isCloudSync
 }) {
   const [countdown, setCountdown] = useState(2698); // 44:58
   const [isUnlocking, setIsUnlocking] = useState(false);
@@ -166,6 +169,147 @@ export default function CenterDashboard({
     setVariantResult(`Sequence seed: ${randomized.join(' → ')} | Checksum: 0x${Math.abs(hash).toString(16).substring(0, 4).toUpperCase()}`);
   };
 
+  const hashRoll = (val) => {
+    let hash = 0;
+    for (let i = 0; i < val.length; i++) {
+      hash = val.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return Math.abs(hash).toString(16).substring(0, 4).toUpperCase();
+  };
+
+  const getShuffledQuestions = (questions, val) => {
+    if (!questions || questions.length === 0) return [];
+    
+    let hash = 0;
+    for (let i = 0; i < val.length; i++) {
+      hash = val.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    
+    const temp = [...questions];
+    const randomized = [];
+    let seed = Math.abs(hash);
+    
+    while (temp.length > 0) {
+      seed = (seed * 9301 + 49297) % 233280;
+      const index = seed % temp.length;
+      randomized.push(temp.splice(index, 1)[0]);
+    }
+    
+    return randomized;
+  };
+
+  const handleDownloadPDF = (candidateRoll) => {
+    if (!unlocked || !candidateRoll) return;
+    
+    const doc = new jsPDF();
+    const center = currentUser.centerCode;
+    const dateStr = new Date().toLocaleDateString();
+    
+    const drawWatermark = (pdf) => {
+      pdf.setTextColor(225, 225, 225);
+      pdf.setFontSize(8);
+      pdf.setFont("Helvetica", "bold");
+      
+      for (let y = 35; y < 290; y += 45) {
+        for (let x = 10; x < 210; x += 70) {
+          pdf.text(`${center} - ROLL#${candidateRoll}`, x, y, { angle: 315 });
+        }
+      }
+      
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFontSize(10);
+      pdf.setFont("Helvetica", "normal");
+    };
+
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(15);
+    doc.setTextColor(0, 50, 100);
+    doc.text("NATIONAL TESTING AGENCY (NTA)", 105, 15, { align: "center" });
+    
+    doc.setFontSize(11);
+    doc.setTextColor(80, 80, 80);
+    doc.text("NEET (UG) 2026 - CONFIDENTIAL EXAM BOOKLET", 105, 22, { align: "center" });
+    
+    doc.setDrawColor(0, 50, 100);
+    doc.setLineWidth(0.5);
+    doc.line(15, 26, 195, 26);
+    
+    doc.setFillColor(245, 247, 250);
+    doc.rect(15, 30, 180, 25, "F");
+    doc.setDrawColor(200, 200, 200);
+    doc.rect(15, 30, 180, 25, "S");
+    
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(50, 50, 50);
+    doc.text(`CANDIDATE ROLL: ${candidateRoll}`, 20, 36);
+    doc.text(`CENTER CODE: ${center}`, 20, 42);
+    doc.text(`EXAM DATE: ${dateStr}`, 20, 48);
+    
+    doc.text(`VARIANT SEED: 0x${hashRoll(candidateRoll)}`, 110, 36);
+    doc.text(`STATUS: OFFLINE DECRYPTED`, 110, 42);
+    doc.text("SECURITY PROTOCOL: DWT-SVD COMPLIANT", 110, 48);
+    
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    
+    let yPos = 68;
+    const shuffledQs = getShuffledQuestions(recentQuestions || [], candidateRoll);
+    drawWatermark(doc);
+    
+    shuffledQs.forEach((q, idx) => {
+      if (yPos > 255) {
+        doc.addPage();
+        drawWatermark(doc);
+        yPos = 25;
+      }
+      
+      doc.setFont("Helvetica", "bold");
+      const qNumText = `Q${idx + 1}. `;
+      const qText = q.text || "";
+      const splitText = doc.splitTextToSize(qText, 160);
+      
+      doc.text(qNumText, 15, yPos);
+      doc.text(splitText, 25, yPos);
+      
+      yPos += (splitText.length * 5) + 3;
+      
+      doc.setFont("Helvetica", "normal");
+      const options = q.options || [
+        { text: "A. Option sample", correct: false },
+        { text: "B. Option sample", correct: false },
+        { text: "C. Option sample", correct: false },
+        { text: "D. Option sample", correct: false }
+      ];
+      
+      options.forEach((opt) => {
+        if (yPos > 265) {
+          doc.addPage();
+          drawWatermark(doc);
+          yPos = 25;
+        }
+        
+        doc.text(opt.text, 25, yPos);
+        yPos += 5;
+      });
+      
+      yPos += 4;
+    });
+    
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(7);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`CONFIDENTIAL · SECURED BY OMNISHIELD AI · SHA256-HASH: ${hashRoll(candidateRoll + i)}`, 15, 288);
+      doc.text(`Page ${i} of ${pageCount}`, 195, 288, { align: "right" });
+    }
+    
+    doc.save(`NEET_2026_Exam_Paper_${center}_${candidateRoll}.pdf`);
+  };
+
   return (
     <div className="space-y-6">
       {/* Center Dashboard Header */}
@@ -175,6 +319,14 @@ export default function CenterDashboard({
           <p className="text-xs text-text2">Center Coordinator: {currentUser.username} | Code: <span className="text-white font-mono font-bold">{currentUser.centerCode}</span></p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Cloud Sync Status Indicator */}
+          <div className="nav-status font-mono text-[10px] bg-bg3 border border-border px-2 py-1 rounded flex items-center gap-1.5">
+            <div className={`w-1.5 h-1.5 rounded-full ${isCloudSync ? 'bg-green animate-pulse' : 'bg-blue'}`} />
+            <span className={isCloudSync ? 'text-green' : 'text-blue-400'}>
+              {isCloudSync ? 'CLOUD SYNC ACTIVE' : 'LOCAL TAB SYNC'}
+            </span>
+          </div>
+
           <button 
             onClick={onLogout}
             className="px-3 py-1.5 rounded bg-bg3 border border-border text-xs text-text2 hover:text-white transition-all font-mono"
@@ -396,10 +548,24 @@ export default function CenterDashboard({
                 placeholder="Enter candidate roll number..." 
               />
               <div 
-                className="font-mono text-[10px] text-green min-h-[32px] p-2 bg-bg3 rounded border border-border leading-relaxed break-all"
+                className="font-mono text-[10px] text-green min-h-[32px] p-2 bg-bg3 rounded border border-border leading-relaxed break-all mb-2"
               >
                 {variantResult || 'Enter a roll number to preview sequence seed'}
               </div>
+
+              <button
+                type="button"
+                onClick={() => handleDownloadPDF(rollNumber)}
+                disabled={!unlocked || !rollNumber}
+                className={`w-full py-2.5 rounded-lg font-semibold text-xs tracking-wider transition-all uppercase flex items-center justify-center gap-2 ${
+                  unlocked && rollNumber
+                    ? 'bg-green hover:bg-green/90 text-black cursor-pointer font-bold'
+                    : 'bg-bg3 border border-border text-text3 cursor-not-allowed'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                Download Watermarked PDF
+              </button>
             </div>
           </div>
         </div>

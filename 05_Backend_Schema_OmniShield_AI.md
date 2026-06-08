@@ -1,10 +1,6 @@
 # Backend Schema Document
 ## OmniShield AI - Examination Integrity Platform
 
-**Version:** 1.0  
-**Date:** June 2026  
-**Status:** Submission Ready
-
 ---
 
 ## 1. Database Overview
@@ -589,7 +585,3 @@ GROUP BY status;
 - Archive: Move old alerts to separate table
 
 ---
-
-**Document Owner:** Backend Engineering  
-**Last Updated:** June 2026  
-**Next Review:** July 2026

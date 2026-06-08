@@ -1,10 +1,6 @@
 # App Flow Document
 ## OmniShield AI - Examination Integrity Platform
 
-**Version:** 1.0  
-**Date:** June 2026  
-**Status:** Submission Ready
-
 ---
 
 ## 1. User Journey Overview
@@ -564,7 +560,3 @@ User Input → Validation → Error
 ```
 
 ---
-
-**Document Owner:** Product Design  
-**Last Updated:** June 2026  
-**Next Review:** July 2026

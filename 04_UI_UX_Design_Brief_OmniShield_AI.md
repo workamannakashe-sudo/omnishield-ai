@@ -1,10 +1,6 @@
 # UI/UX Design Brief
 ## OmniShield AI - Examination Integrity Platform
 
-**Version:** 1.0  
-**Date:** June 2026  
-**Status:** Submission Ready
-
 ---
 
 ## 1. Design Philosophy
@@ -503,7 +499,3 @@ All components are built using shadcn/ui and Tailwind CSS with custom design tok
 - Global styles in `client/src/index.css`
 
 ---
-
-**Document Owner:** Design & UX  
-**Last Updated:** June 2026  
-**Next Review:** July 2026

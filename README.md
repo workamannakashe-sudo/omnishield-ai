@@ -6,7 +6,7 @@
 
 **FAR AWAY 2026 Hackathon** &nbsp;|&nbsp; Domain: **Examinations + Agentic & Autonomous Systems**
 
-[![Live Demo](https://omnishield-ai.vercel.app/)]
+[Live Demo](https://omnishield-ai.vercel.app/)
 
 <img width="1582" height="769" alt="WhatsApp Image 2026-06-09 at 11 42 34 AM" src="https://github.com/user-attachments/assets/cafec933-0b17-44ef-9fcb-b87f69a81238" />
 

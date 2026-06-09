@@ -6,22 +6,15 @@
 
 **FAR AWAY 2026 Hackathon** &nbsp;|&nbsp; Domain: **Examinations + Agentic & Autonomous Systems**
 
-[[Live Demo](https://img.shields.io/badge/Live%20Demo-omnishield--ai.vercel.app-00d4ff?style=for-the-badge&logo=vercel)](https://omnishield-ai.vercel.app)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-omnishield--ai.vercel.app-00d4ff?style=for-the-badge&logo=vercel)]
 
-<img width="1584" height="754" alt="image" src="https://github.com/user-attachments/assets/fb685d8a-aaa1-43b3-bad6-9f8778581ecc" />
+<img width="1582" height="769" alt="WhatsApp Image 2026-06-09 at 11 42 34 AM" src="https://github.com/user-attachments/assets/cafec933-0b17-44ef-9fcb-b87f69a81238" />
 
+<img width="1585" height="767" alt="WhatsApp Image 2026-06-09 at 11 43 09 AM" src="https://github.com/user-attachments/assets/1808e52e-c4fe-434d-b600-39a1652c1ac1" />
 
-<img width="1582" height="769" alt="WhatsApp Image 2026-06-09 at 11 42 34 AM" src="https://github.com/user-attachments/assets/d9aed4ae-9df1-4fad-8f03-c29287401572" />
+<img width="1596" height="744" alt="WhatsApp Image 2026-06-09 at 11 43 29 AM" src="https://github.com/user-attachments/assets/7a3bd89b-abac-40e2-9fe5-95e122506738" />
 
-
-<img width="1596" height="744" alt="WhatsApp Image 2026-06-09 at 11 43 29 AM" src="https://github.com/user-attachments/assets/95825229-f70f-41a3-8c5e-046ce0338dcb" />
-
-
-<img width="1584" height="754" alt="WhatsApp Image 2026-06-09 at 11 43 47 AM" src="https://github.com/user-attachments/assets/3457ff62-65b3-48e7-b653-5a1b14407a2f" />
-
-
-
-
+<img width="1584" height="754" alt="WhatsApp Image 2026-06-09 at 11 43 47 AM" src="https://github.com/user-attachments/assets/a4f6dda2-ea5b-4a8d-9eaa-873454500a1b" />
 
 </div>
 

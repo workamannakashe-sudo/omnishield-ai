@@ -6,11 +6,22 @@
 
 **FAR AWAY 2026 Hackathon** &nbsp;|&nbsp; Domain: **Examinations + Agentic & Autonomous Systems**
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-omnishield--ai.vercel.app-00d4ff?style=for-the-badge&logo=vercel)](https://omnishield-ai.vercel.app)
-[![React](https://img.shields.io/badge/React-19.2.1-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9.3-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org)
-[![Claude API](https://img.shields.io/badge/Claude%20API-Anthropic-FF6B35?style=for-the-badge)](https://anthropic.com)
-[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
+[[Live Demo](https://img.shields.io/badge/Live%20Demo-omnishield--ai.vercel.app-00d4ff?style=for-the-badge&logo=vercel)](https://omnishield-ai.vercel.app)
+
+<img width="1584" height="754" alt="image" src="https://github.com/user-attachments/assets/fb685d8a-aaa1-43b3-bad6-9f8778581ecc" />
+
+
+<img width="1582" height="769" alt="WhatsApp Image 2026-06-09 at 11 42 34 AM" src="https://github.com/user-attachments/assets/d9aed4ae-9df1-4fad-8f03-c29287401572" />
+
+
+<img width="1596" height="744" alt="WhatsApp Image 2026-06-09 at 11 43 29 AM" src="https://github.com/user-attachments/assets/95825229-f70f-41a3-8c5e-046ce0338dcb" />
+
+
+<img width="1584" height="754" alt="WhatsApp Image 2026-06-09 at 11 43 47 AM" src="https://github.com/user-attachments/assets/3457ff62-65b3-48e7-b653-5a1b14407a2f" />
+
+
+
+
 
 </div>
 
@@ -144,9 +155,8 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173)
+Open [https://omnishield-ai.vercel.app]
 
-**Login:** `admin` / `admin123`
 
 ### Run the Watermark Agent (Python)
 
@@ -224,7 +234,7 @@ omnishield-ai/
 
 ## 👥 Team
 
-**3rd-year B.E. students**
+**3rd-year B.Tech. students**
 
 Built in **6 days** for FAR AWAY 2026 — India's Biggest International Hackathon.
 

@@ -111,6 +111,11 @@ export default function CommandCenterApp() {
     sms_sender: "OMNISH"
   });
 
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // Clock Ticker
   const [clockTime, setClockTime] = useState('17:08:58 IST');
   useEffect(() => {
@@ -123,29 +128,55 @@ export default function CommandCenterApp() {
 
   // WebSockets effect
   useEffect(() => {
-    const wsUrl = `ws://${window.location.hostname}:8000/ws/events`;
-    const socket = new WebSocket(wsUrl);
+    let socket;
+    try {
+      const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+      const defaultProtocol = isHttps ? 'wss' : 'ws';
+      const defaultPort = isHttps ? '' : ':8000';
+      const defaultWsUrl = `${defaultProtocol}://${window.location.hostname}${defaultPort}/ws/events`;
+      
+      const wsUrl = process.env.NEXT_PUBLIC_WS_URL || defaultWsUrl;
+      socket = new WebSocket(wsUrl);
 
-    socket.onopen = () => {
-      setIsWsConnected(true);
-      addLog("system", "Established real-time WebSocket connection to OmniShield Backend.");
-    };
+      socket.onopen = () => {
+        setIsWsConnected(true);
+        addLog("system", `Established real-time WebSocket connection to OmniShield Backend: ${wsUrl}`);
+      };
 
-    socket.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        handleWsMessage(payload);
-      } catch (err) {
-        console.error("Failed parsing WS message", err);
+      socket.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          handleWsMessage(payload);
+        } catch (err) {
+          console.error("Failed parsing WS message", err);
+        }
+      };
+
+      socket.onclose = () => {
+        setIsWsConnected(false);
+        addLog("warn", "WebSocket disconnected. Reconnecting in background...");
+      };
+
+      socket.onerror = (err) => {
+        console.error("WebSocket error:", err);
+      };
+    } catch (err) {
+      console.error("Failed to construct WebSocket:", err);
+      setIsWsConnected(false);
+      // Fallback log
+      const now = new Date();
+      const timeStr = now.toTimeString().slice(0, 8);
+      setSystemLogs(prev => [
+        { ts: timeStr, type: "warn", msg: "WebSocket blocked/unreachable. Running in local simulated mode." },
+        ...prev
+      ]);
+    }
+
+    return () => {
+      if (socket) {
+        socket.close();
       }
     };
-
-    socket.onclose = () => {
-      setIsWsConnected(false);
-      addLog("warn", "WebSocket disconnected. Reconnecting in background...");
-    };
-
-    return () => socket.close();
   }, []);
 
   const addLog = (type, msg) => {
@@ -1481,21 +1512,25 @@ export default function CommandCenterApp() {
                 <div className="bg-bg border border-borderCls rounded-lg p-4 space-y-3">
                   <h3 className="text-xs font-bold text-white font-mono">Question Approval Timeline</h3>
                   <div className="w-full h-[200px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={[
-                        { name: '12:00', val: 15 },
-                        { name: '13:00', val: 45 },
-                        { name: '14:00', val: 95 },
-                        { name: '15:00', val: 120 },
-                        { name: '16:00', val: 240 }
-                      ]}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#162030" />
-                        <XAxis dataKey="name" stroke="#6b7280" style={{ fontSize: 9 }} />
-                        <YAxis stroke="#6b7280" style={{ fontSize: 9 }} />
-                        <Tooltip contentStyle={{ backgroundColor: '#080d14', border: '1px solid #162030' }} />
-                        <Area type="monotone" dataKey="val" stroke="#2eb8ff" fill="rgba(46,184,255,0.1)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
+                    {mounted ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={[
+                          { name: '12:00', val: 15 },
+                          { name: '13:00', val: 45 },
+                          { name: '14:00', val: 95 },
+                          { name: '15:00', val: 120 },
+                          { name: '16:00', val: 240 }
+                        ]}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#162030" />
+                          <XAxis dataKey="name" stroke="#6b7280" style={{ fontSize: 9 }} />
+                          <YAxis stroke="#6b7280" style={{ fontSize: 9 }} />
+                          <Tooltip contentStyle={{ backgroundColor: '#080d14', border: '1px solid #162030' }} />
+                          <Area type="monotone" dataKey="val" stroke="#2eb8ff" fill="rgba(46,184,255,0.1)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500 font-mono">LOADING CHARTS...</div>
+                    )}
                   </div>
                 </div>
 
@@ -1503,19 +1538,23 @@ export default function CommandCenterApp() {
                 <div className="bg-bg border border-borderCls rounded-lg p-4 space-y-3">
                   <h3 className="text-xs font-bold text-white font-mono">OSINT Threat Volumetric History</h3>
                   <div className="w-full h-[200px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={[
-                        { name: 'Telegram', val: 840 },
-                        { name: 'Dark Web', val: 240 },
-                        { name: 'Twitter', val: 150 }
-                      ]}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#162030" />
-                        <XAxis dataKey="name" stroke="#6b7280" style={{ fontSize: 9 }} />
-                        <YAxis stroke="#6b7280" style={{ fontSize: 9 }} />
-                        <Tooltip contentStyle={{ backgroundColor: '#080d14', border: '1px solid #162030' }} />
-                        <Bar dataKey="val" fill="#ffcc44" />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    {mounted ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={[
+                          { name: 'Telegram', val: 840 },
+                          { name: 'Dark Web', val: 240 },
+                          { name: 'Twitter', val: 150 }
+                        ]}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#162030" />
+                          <XAxis dataKey="name" stroke="#6b7280" style={{ fontSize: 9 }} />
+                          <YAxis stroke="#6b7280" style={{ fontSize: 9 }} />
+                          <Tooltip contentStyle={{ backgroundColor: '#080d14', border: '1px solid #162030' }} />
+                          <Bar dataKey="val" fill="#ffcc44" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500 font-mono">LOADING CHARTS...</div>
+                    )}
                   </div>
                 </div>
 

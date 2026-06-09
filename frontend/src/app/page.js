@@ -8,6 +8,7 @@ import {
   Plus, Play, RefreshCw, BarChart2, Eye, EyeOff, Lock, Unlock, Mail, Phone, Globe
 } from 'lucide-react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, BarChart, Bar, Legend } from 'recharts';
+import { jsPDF } from 'jspdf';
 
 export default function CommandCenterApp() {
   const [role, setRole] = useState('SuperAdmin'); // SuperAdmin, ExamBoard, Center, Invigilator, Candidate
@@ -115,6 +116,170 @@ export default function CommandCenterApp() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // State for manual question entry form
+  const [manualQuestion, setManualQuestion] = useState('');
+  const [manualSubject, setManualSubject] = useState('Biology');
+  const [manualBloom, setManualBloom] = useState('L3 Apply');
+  const [manualOptionA, setManualOptionA] = useState('');
+  const [manualOptionB, setManualOptionB] = useState('');
+  const [manualOptionC, setManualOptionC] = useState('');
+  const [manualOptionD, setManualOptionD] = useState('');
+  const [manualCorrect, setManualCorrect] = useState('A');
+
+  const handleManualAddQuestion = (e) => {
+    e.preventDefault();
+    if (!manualQuestion.trim() || !manualOptionA.trim() || !manualOptionB.trim() || !manualOptionC.trim() || !manualOptionD.trim()) {
+      alert("Please fill in all fields.");
+      return;
+    }
+
+    const newQ = {
+      id: questions.length + 1,
+      subject: manualSubject,
+      text: manualQuestion,
+      bloom: manualBloom,
+      difficulty: "Medium",
+      type: "MCQ_single",
+      status: "APPROVED",
+      sim: "0.0% (Manual)",
+      options: {
+        A: manualOptionA,
+        B: manualOptionB,
+        C: manualOptionC,
+        D: manualOptionD
+      },
+      correct: manualCorrect
+    };
+
+    setQuestions(prev => [newQ, ...prev]);
+    setMetrics(prev => ({ ...prev, questionsBanked: prev.questionsBanked + 1 }));
+    addLog("green", `[MANUAL ADD] Question #${newQ.id} registered into the secure database.`);
+
+    // Reset fields
+    setManualQuestion('');
+    setManualOptionA('');
+    setManualOptionB('');
+    setManualOptionC('');
+    setManualOptionD('');
+    setManualCorrect('A');
+
+    alert("Question added to bank successfully!");
+  };
+
+  const handleDownloadPDF = (candidateRoll = "ROLL#2024001") => {
+    try {
+      const doc = new jsPDF();
+      const center = "IN-MH-402";
+      const dateStr = new Date().toLocaleDateString();
+      
+      const drawWatermark = (pdf) => {
+        pdf.setTextColor(225, 225, 225);
+        pdf.setFontSize(8);
+        pdf.setFont("Helvetica", "bold");
+        
+        for (let y = 35; y < 290; y += 45) {
+          for (let x = 10; x < 210; x += 70) {
+            pdf.text(`${center} - ROLL#${candidateRoll}`, x, y, { angle: 315 });
+          }
+        }
+        
+        pdf.setTextColor(0, 0, 0);
+        pdf.setFontSize(10);
+        pdf.setFont("Helvetica", "normal");
+      };
+
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(15);
+      doc.setTextColor(0, 50, 100);
+      doc.text("NATIONAL TESTING AGENCY (NTA)", 105, 15, { align: "center" });
+      
+      doc.setFontSize(11);
+      doc.setTextColor(80, 80, 80);
+      doc.text("NEET (UG) 2026 - CONFIDENTIAL EXAM BOOKLET", 105, 22, { align: "center" });
+      
+      doc.setDrawColor(0, 50, 100);
+      doc.setLineWidth(0.5);
+      doc.line(15, 26, 195, 26);
+      
+      doc.setFillColor(245, 247, 250);
+      doc.rect(15, 30, 180, 25, "F");
+      doc.setDrawColor(200, 200, 200);
+      doc.rect(15, 30, 180, 25, "S");
+      
+      doc.setFont("Helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(50, 50, 50);
+      doc.text(`CANDIDATE ROLL: ${candidateRoll}`, 20, 36);
+      doc.text(`CENTER CODE: ${center}`, 20, 42);
+      doc.text(`EXAM DATE: ${dateStr}`, 20, 48);
+      
+      doc.text(`VARIANT SEED: 0x4E2A`, 110, 36);
+      doc.text(`STATUS: OFFLINE DECRYPTED`, 110, 42);
+      doc.text("SECURITY PROTOCOL: DWT-SVD COMPLIANT", 110, 48);
+      
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(0, 0, 0);
+      
+      let yPos = 68;
+      drawWatermark(doc);
+      
+      questions.forEach((q, idx) => {
+        if (yPos > 255) {
+          doc.addPage();
+          drawWatermark(doc);
+          yPos = 25;
+        }
+        
+        doc.setFont("Helvetica", "bold");
+        const qNumText = `Q${idx + 1}. `;
+        const qText = q.text || "";
+        const splitText = doc.splitTextToSize(qText, 160);
+        
+        doc.text(qNumText, 15, yPos);
+        doc.text(splitText, 25, yPos);
+        
+        yPos += (splitText.length * 5) + 3;
+        
+        doc.setFont("Helvetica", "normal");
+        const optionsList = [
+          { text: "A. Option Alpha" },
+          { text: "B. Option Beta" },
+          { text: "C. Option Gamma" },
+          { text: "D. Option Delta" }
+        ];
+        
+        optionsList.forEach((opt) => {
+          if (yPos > 265) {
+            doc.addPage();
+            drawWatermark(doc);
+            yPos = 25;
+          }
+          
+          doc.text(opt.text, 25, yPos);
+          yPos += 5;
+        });
+        
+        yPos += 4;
+      });
+      
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        doc.text(`CONFIDENTIAL · SECURED BY OMNISHIELD AI · DWT-SVD ENCODED`, 15, 288);
+        doc.text(`Page ${i} of ${pageCount}`, 195, 288, { align: "right" });
+      }
+      
+      doc.save(`NEET_2026_Exam_Paper_${center}_${candidateRoll}.pdf`);
+    } catch (e) {
+      console.error("PDF generation failed:", e);
+      alert("PDF download failed: " + e.message);
+    }
+  };
 
   // Clock Ticker
   const [clockTime, setClockTime] = useState('17:08:58 IST');
@@ -823,6 +988,121 @@ export default function CommandCenterApp() {
                 )}
               </div>
 
+              {/* Manual Question Registration Panel */}
+              <div className="bg-panel border border-borderCls rounded-xl p-6 space-y-4">
+                <div className="pb-3 border-b border-borderCls">
+                  <h3 className="text-xs font-bold uppercase text-white">Manual Question Registration Console</h3>
+                </div>
+                <form onSubmit={handleManualAddQuestion} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-gray-400 uppercase">Subject</label>
+                      <select 
+                        value={manualSubject} 
+                        onChange={(e) => setManualSubject(e.target.value)} 
+                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                      >
+                        <option value="Biology">Biology</option>
+                        <option value="Physics">Physics</option>
+                        <option value="Chemistry">Chemistry</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-gray-400 uppercase">Bloom's Taxonomy</label>
+                      <select 
+                        value={manualBloom} 
+                        onChange={(e) => setManualBloom(e.target.value)} 
+                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                      >
+                        <option value="L1 Remember">L1 Remember</option>
+                        <option value="L2 Understand">L2 Understand</option>
+                        <option value="L3 Apply">L3 Apply</option>
+                        <option value="L4 Analyse">L4 Analyse</option>
+                        <option value="L5 Evaluate">L5 Evaluate</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-gray-400 uppercase">Correct Answer Option</label>
+                      <select 
+                        value={manualCorrect} 
+                        onChange={(e) => setManualCorrect(e.target.value)} 
+                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                      >
+                        <option value="A">Option A</option>
+                        <option value="B">Option B</option>
+                        <option value="C">Option C</option>
+                        <option value="D">Option D</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-mono text-gray-400 uppercase">Question Text</label>
+                    <textarea 
+                      value={manualQuestion} 
+                      onChange={(e) => setManualQuestion(e.target.value)} 
+                      placeholder="Type question content here..." 
+                      className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white min-h-[60px]"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-gray-400 uppercase">Option A</label>
+                      <input 
+                        type="text" 
+                        value={manualOptionA} 
+                        onChange={(e) => setManualOptionA(e.target.value)} 
+                        placeholder="Option A description" 
+                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-gray-400 uppercase">Option B</label>
+                      <input 
+                        type="text" 
+                        value={manualOptionB} 
+                        onChange={(e) => setManualOptionB(e.target.value)} 
+                        placeholder="Option B description" 
+                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-gray-400 uppercase">Option C</label>
+                      <input 
+                        type="text" 
+                        value={manualOptionC} 
+                        onChange={(e) => setManualOptionC(e.target.value)} 
+                        placeholder="Option C description" 
+                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-gray-400 uppercase">Option D</label>
+                      <input 
+                        type="text" 
+                        value={manualOptionD} 
+                        onChange={(e) => setManualOptionD(e.target.value)} 
+                        placeholder="Option D description" 
+                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <button 
+                    type="submit"
+                    className="w-full py-2.5 bg-blue hover:bg-blue/90 text-white rounded text-xs font-semibold uppercase tracking-wider"
+                  >
+                    Register & Encrypt Question
+                  </button>
+                </form>
+              </div>
+
               {/* Staged uploads panel */}
               <div className="bg-panel border border-borderCls rounded-xl p-6 space-y-4">
                 <div className="pb-3 border-b border-borderCls flex justify-between items-center">
@@ -1250,7 +1530,8 @@ export default function CommandCenterApp() {
                       <button 
                         onClick={() => {
                           setMetrics(prev => ({ ...prev, papersDownloaded: 1 }));
-                          addLog("green", "Center operator compiled and downloaded watermarked booklets.");
+                          addLog("green", "Center operator decrypted the pre-loaded bank successfully.");
+                          handleDownloadPDF("DEFAULT_CENTER_SET");
                         }}
                         disabled={metrics.papersDownloaded > 0}
                         className="w-full py-3 bg-blue hover:bg-blue/90 disabled:bg-bg3 disabled:border disabled:border-borderCls text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
@@ -1259,6 +1540,34 @@ export default function CommandCenterApp() {
                         {metrics.papersDownloaded > 0 ? '✓ Decrypted & Downloaded' : 'Decrypt & Download'}
                       </button>
                     </div>
+
+                    {/* Candidate Booklet Generator Card */}
+                    {metrics.papersDownloaded > 0 && (
+                      <div className="bg-bg border border-borderCls rounded-lg p-5 mt-4 space-y-4 col-span-2">
+                        <h4 className="text-xs font-bold text-white font-mono uppercase">Watermarked Booklet Download</h4>
+                        <p className="text-[11px] text-gray-400">
+                          Compile and download candidate-specific shuffled booklet with evolutionary DWT-SVD watermarks.
+                        </p>
+                        <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            id="centerCandidateRoll"
+                            placeholder="Candidate Roll (e.g. ROLL#2024001)"
+                            className="bg-bg border border-borderCls rounded p-2 text-xs text-white outline-none flex-1"
+                          />
+                          <button 
+                            onClick={() => {
+                              const rollInput = document.getElementById("centerCandidateRoll");
+                              const roll = rollInput?.value || "ROLL#2024001";
+                              handleDownloadPDF(roll);
+                            }}
+                            className="px-4 py-2 bg-green hover:bg-green/90 text-black rounded text-xs font-bold uppercase"
+                          >
+                            Download PDF
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Printer queue simulator */}
                     <div className="bg-bg border border-borderCls rounded-lg p-4 space-y-4">

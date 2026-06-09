@@ -13,6 +13,84 @@ export default function Phase1Tab({
 }) {
   const [pipelineRunning, setPipelineRunning] = useState(false);
   
+  // State for manual question entry form
+  const [manualQuestion, setManualQuestion] = useState('');
+  const [manualSubject, setManualSubject] = useState('Biology');
+  const [manualBloom, setManualBloom] = useState('Bloom L3 — Apply');
+  const [manualOptionA, setManualOptionA] = useState('');
+  const [manualOptionB, setManualOptionB] = useState('');
+  const [manualOptionC, setManualOptionC] = useState('');
+  const [manualOptionD, setManualOptionD] = useState('');
+  const [manualCorrect, setManualCorrect] = useState('A');
+
+  const handleManualAdd = (e) => {
+    e.preventDefault();
+    if (!manualQuestion.trim() || !manualOptionA.trim() || !manualOptionB.trim() || !manualOptionC.trim() || !manualOptionD.trim()) {
+      alert("Please fill in the question text and all four options.");
+      return;
+    }
+
+    const newQ = {
+      text: manualQuestion,
+      subject: manualSubject,
+      bloom: manualBloom,
+      similarity: "Sim: 0.00 (Manual)",
+      options: [
+        { text: `A. ${manualOptionA}`, correct: manualCorrect === 'A' },
+        { text: `B. ${manualOptionB}`, correct: manualCorrect === 'B' },
+        { text: `C. ${manualOptionC}`, correct: manualCorrect === 'C' },
+        { text: `D. ${manualOptionD}`, correct: manualCorrect === 'D' }
+      ]
+    };
+
+    setTotalQuestions(prev => prev + 1);
+    setRecentQuestions(prev => [
+      {
+        id: `${manualSubject.substring(0, 4).toUpperCase()}-2026-${Math.floor(Math.random() * 900 + 100)}`,
+        text: newQ.text,
+        subject: newQ.subject,
+        bloom: newQ.bloom,
+        similarity: newQ.similarity,
+        timestamp: new Date().toTimeString().slice(0, 8),
+        options: newQ.options
+      },
+      ...prev
+    ]);
+
+    // Update Bloom's taxonomy bars dynamically
+    setDifficultyData(prev => {
+      const shortName = manualBloom.split(' — ')[1] || 'Apply';
+      return prev.map(item => {
+        if (item.name.toLowerCase().includes(shortName.toLowerCase())) {
+          return { ...item, value: Math.min(item.value + 1, 100) };
+        }
+        return item;
+      });
+    });
+
+    // Update subject coverage bars dynamically
+    setSubjectData(prev => {
+      return prev.map(item => {
+        if (item.name.toLowerCase() === manualSubject.toLowerCase()) {
+          return { ...item, value: Math.min(item.value + 1, 100) };
+        }
+        return item;
+      });
+    });
+
+    addSystemLog(`[MANUAL ADD] Operator registered new question to the bank [${manualSubject} - ${manualBloom}]`);
+
+    // Reset inputs
+    setManualQuestion('');
+    setManualOptionA('');
+    setManualOptionB('');
+    setManualOptionC('');
+    setManualOptionD('');
+    setManualCorrect('A');
+
+    alert("Question added to bank successfully!");
+  };
+
   // Pipeline steps states
   const [stepsStates, setStepsStates] = useState([
     { status: 'done', label: 'READY', badgeCls: 'badge-green', detail: '200 seed questions · Biology Ch.12' },
@@ -296,6 +374,126 @@ export default function Phase1Tab({
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Manual Question Insertion Console */}
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title">
+              <div className="dot" style={{ backgroundColor: 'var(--blue)' }} />
+              Manual Question Registration Console
+            </div>
+          </div>
+          <div className="panel-body">
+            <form onSubmit={handleManualAdd} className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-text3 uppercase block">Subject</label>
+                  <select 
+                    value={manualSubject} 
+                    onChange={(e) => setManualSubject(e.target.value)}
+                    className="inp"
+                  >
+                    <option value="Biology">Biology</option>
+                    <option value="Chemistry">Chemistry</option>
+                    <option value="Physics">Physics</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-text3 uppercase block">Bloom's Level</label>
+                  <select 
+                    value={manualBloom} 
+                    onChange={(e) => setManualBloom(e.target.value)}
+                    className="inp"
+                  >
+                    <option value="Bloom L1 — Remember">Bloom L1 — Remember</option>
+                    <option value="Bloom L2 — Understand">Bloom L2 — Understand</option>
+                    <option value="Bloom L3 — Apply">Bloom L3 — Apply</option>
+                    <option value="Bloom L4 — Analyse">Bloom L4 — Analyse</option>
+                    <option value="Bloom L5 — Evaluate">Bloom L5 — Evaluate</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-text3 uppercase block">Correct Option</label>
+                  <select 
+                    value={manualCorrect} 
+                    onChange={(e) => setManualCorrect(e.target.value)}
+                    className="inp"
+                  >
+                    <option value="A">Option A</option>
+                    <option value="B">Option B</option>
+                    <option value="C">Option C</option>
+                    <option value="D">Option D</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-mono text-text3 uppercase block">Question Text</label>
+                <textarea 
+                  value={manualQuestion} 
+                  onChange={(e) => setManualQuestion(e.target.value)}
+                  placeholder="Type question content here..." 
+                  className="inp min-h-[50px] resize-y"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-text3 uppercase block">Option A</label>
+                  <input 
+                    type="text" 
+                    value={manualOptionA} 
+                    onChange={(e) => setManualOptionA(e.target.value)}
+                    placeholder="Enter choice A" 
+                    className="inp"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-text3 uppercase block">Option B</label>
+                  <input 
+                    type="text" 
+                    value={manualOptionB} 
+                    onChange={(e) => setManualOptionB(e.target.value)}
+                    placeholder="Enter choice B" 
+                    className="inp"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-text3 uppercase block">Option C</label>
+                  <input 
+                    type="text" 
+                    value={manualOptionC} 
+                    onChange={(e) => setManualOptionC(e.target.value)}
+                    placeholder="Enter choice C" 
+                    className="inp"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-text3 uppercase block">Option D</label>
+                  <input 
+                    type="text" 
+                    value={manualOptionD} 
+                    onChange={(e) => setManualOptionD(e.target.value)}
+                    placeholder="Enter choice D" 
+                    className="inp"
+                    required
+                  />
+                </div>
+              </div>
+
+              <button 
+                type="submit"
+                className="w-full py-2 bg-blue hover:bg-blue/90 text-white font-semibold text-xs tracking-wider rounded-lg transition-all uppercase mt-2 shadow-lg"
+              >
+                Register & Encrypt Question
+              </button>
+            </form>
           </div>
         </div>
       </div>

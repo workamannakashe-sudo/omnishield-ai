@@ -27,3 +27,15 @@ dist-ssr
 .vite/
 .vite-inspect
 
+# Python
+__pycache__/
+*.py[cod]
+venv/
+*.db
+backend/venv/
+backend/*.db
+
+# Next.js
+frontend/.next/
+frontend/out/
+

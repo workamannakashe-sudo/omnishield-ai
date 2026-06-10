@@ -129,3 +129,19 @@ def seal_paper_blob(paper_json_str: str) -> Tuple[str, str, str]:
     sha_hash = calculate_sha256(blob.encode('utf-8'))
     
     return blob, base64.b64encode(aes_key).decode('utf-8'), sha_hash
+
+def encrypt_with_rsa(public_key_pem: str, plaintext: bytes) -> str:
+    """
+    Encrypts data using the center's PEM public RSA key. Returns base64 encoded string.
+    """
+    public_key = serialization.load_pem_public_key(public_key_pem.encode('utf-8'))
+    ciphertext = public_key.encrypt(
+        plaintext,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return base64.b64encode(ciphertext).decode('utf-8')
+

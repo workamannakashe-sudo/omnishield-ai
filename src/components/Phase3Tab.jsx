@@ -126,6 +126,29 @@ export default function Phase3Tab({
           </div>
         </div>
 
+        {/* Satellite Key Card */}
+        <div className="panel border border-amber-500/20" style={{ borderColor: 'rgba(245, 158, 11, 0.2)' }}>
+          <div className="panel-header border-b border-amber-500/20">
+            <div className="panel-title text-amber-400 font-display flex items-center gap-2">
+              <span>🔑</span> Satellite Decryption Key (Emergency Offline)
+            </div>
+            <div className="badge badge-amber font-mono text-[9px]">
+              EXAM DAY PASS
+            </div>
+          </div>
+          <div className="panel-body space-y-3">
+            <p className="text-xs text-text2 leading-relaxed">
+              If an exam center is fully air-gapped or experiencing network failure, provide this key to the coordinator via telephone or satellite broadcast to unlock the offline bundle.
+            </p>
+            <div className="flex items-center justify-between bg-bg3 border border-border p-3 rounded-lg">
+              <span className="text-[9px] text-text3 font-mono">BROADCAST_ID: NEET_2026</span>
+              <span className="text-xs text-white font-mono font-bold select-all bg-bg2 px-2.5 py-1 rounded border border-border/60 tracking-wider">
+                OMNISHIELD-KEY-2026-NEET
+              </span>
+            </div>
+          </div>
+        </div>
+
         {/* Sync logs terminal */}
         <div className="panel">
           <div className="panel-header">

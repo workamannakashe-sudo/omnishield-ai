@@ -425,18 +425,21 @@ async def upload_pdf_paper(
     session.flush()
 
     # --- audit log ---
+    event_data = {
+        "paper_id": paper.id,
+        "paper_name": paper_name,
+        "filename": file.filename,
+        "file_size_bytes": len(pdf_bytes),
+        "paper_hash": paper_hash,
+        "set_code": set_code,
+    }
     audit = AuditLedger(
         exam_id=exam.id,
         event_type="PDF_PAPER_UPLOADED",
-        actor=sealed_by,
-        details_json=json.dumps({
-            "paper_id": paper.id,
-            "paper_name": paper_name,
-            "filename": file.filename,
-            "file_size_bytes": len(pdf_bytes),
-            "paper_hash": paper_hash,
-            "set_code": set_code,
-        }),
+        actor_id=sealed_by,
+        actor_role="ExamBoard Admin",
+        payload_json=json.dumps(event_data),
+        event_hash=calculate_sha256(json.dumps(event_data).encode('utf-8'))
     )
     session.add(audit)
     session.commit()
@@ -464,3 +467,79 @@ async def upload_pdf_paper(
         "status": "SEALED",
         "message": f"PDF paper '{paper_name}' uploaded and sealed successfully.",
     }
+
+@router.get("/{id}/download-bundle")
+def download_encrypted_bundle(
+    id: int,
+    key: str = "OMNISHIELD-KEY-2026-NEET",
+    db: Session = Depends(get_session)
+):
+    """
+    Encrypts the sealed exam paper using AES-256-GCM.
+    The symmetric key is derived by hashing the manual key query param.
+    """
+    paper = db.get(QuestionPaper, id)
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+        
+    # Read raw content
+    if paper.encrypted_blob_url and os.path.exists(paper.encrypted_blob_url):
+        with open(paper.encrypted_blob_url, "rb") as f:
+            raw_content = f.read()
+    else:
+        # Fallback to building from questions in the database
+        stmt = select(Question, PaperQuestionLink.order_index, PaperQuestionLink.section).join(
+            PaperQuestionLink
+        ).where(PaperQuestionLink.paper_id == id).order_by(PaperQuestionLink.order_index)
+        results = db.exec(stmt).all()
+        
+        paper_struct = []
+        for q, idx, sec in results:
+            try:
+                txt = json.loads(q.text_json).get("en", "")
+            except Exception:
+                txt = q.text_json
+                
+            try:
+                opts = json.loads(q.options_json).get("en", {})
+            except Exception:
+                try:
+                    opts = json.loads(q.options_json)
+                except Exception:
+                    opts = {}
+            
+            paper_struct.append({
+                "id": q.id,
+                "text": txt,
+                "options": [{"text": f"{k}. {v}", "correct": (k == q.answer)} for k, v in opts.items()],
+                "section": sec,
+                "order": idx
+            })
+        raw_content = json.dumps(paper_struct).encode('utf-8')
+        
+    # Derive AES-256 key from human-readable text
+    import hashlib
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    
+    aes_key = hashlib.sha256(key.encode('utf-8')).digest()
+    
+    # Encrypt
+    iv = os.urandom(12)
+    encryptor = Cipher(
+        algorithms.AES(aes_key),
+        modes.GCM(iv),
+    ).encryptor()
+    
+    ciphertext = encryptor.update(raw_content) + encryptor.finalize()
+    # Format: IV (12 bytes) + Ciphertext + Tag (16 bytes)
+    bundle_data = iv + ciphertext + encryptor.tag
+    
+    from fastapi.responses import Response
+    return Response(
+        content=bundle_data,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f"attachment; filename=sealed_bundle_{paper.id}.enc"
+        }
+    )
+

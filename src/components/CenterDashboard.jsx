@@ -17,6 +17,115 @@ export default function CenterDashboard({
   const [activeStep, setActiveStep] = useState(-1);
   const [unlockLogs, setUnlockLogs] = useState([]);
   
+  // Offline decryption states
+  const [encFile, setEncFile] = useState(null);
+  const [decryptionKey, setDecryptionKey] = useState('OMNISHIELD-KEY-2026-NEET');
+  const [decryptedPdfUrl, setDecryptedPdfUrl] = useState(null);
+  const [offlineDecryptLogs, setOfflineDecryptLogs] = useState([]);
+  const [isOfflineDecrypting, setIsOfflineDecrypting] = useState(false);
+  const [localQuestions, setLocalQuestions] = useState(recentQuestions || []);
+
+  useEffect(() => {
+    if (recentQuestions && recentQuestions.length > 0) {
+      setLocalQuestions(recentQuestions);
+    }
+  }, [recentQuestions]);
+
+  const handleOfflineDecrypt = async (e) => {
+    e.preventDefault();
+    if (!encFile) {
+      alert("Please upload a sealed bundle file (.enc).");
+      return;
+    }
+    if (!decryptionKey.trim()) {
+      alert("Please enter the decryption key.");
+      return;
+    }
+
+    setIsOfflineDecrypting(true);
+    setOfflineDecryptLogs(["[START] Initiating Web Crypto offline bundle decryption..."]);
+
+    try {
+      setOfflineDecryptLogs(prev => [...prev, "[RUN] Reading file buffer..."]);
+      const fileReader = new FileReader();
+      const fileDataPromise = new Promise((resolve, reject) => {
+        fileReader.onload = () => resolve(fileReader.result);
+        fileReader.onerror = () => reject(fileReader.error);
+      });
+      fileReader.readAsArrayBuffer(encFile);
+      const arrayBuffer = await fileDataPromise;
+      setOfflineDecryptLogs(prev => [...prev, `[OK] File loaded: ${arrayBuffer.byteLength} bytes`]);
+
+      setOfflineDecryptLogs(prev => [...prev, `[RUN] Deriving AES-256 key via SHA-256 hash of: "${decryptionKey}"`]);
+      const keyBuf = new TextEncoder().encode(decryptionKey);
+      const hashBuf = await window.crypto.subtle.digest('SHA-256', keyBuf);
+      setOfflineDecryptLogs(prev => [...prev, "[OK] SHA-256 key digest generated."]);
+
+      const aesKey = await window.crypto.subtle.importKey(
+        'raw',
+        hashBuf,
+        { name: 'AES-GCM' },
+        false,
+        ['decrypt']
+      );
+      setOfflineDecryptLogs(prev => [...prev, "[OK] AES-GCM cryptographic key imported."]);
+
+      if (arrayBuffer.byteLength < 28) {
+        throw new Error("Invalid bundle: file is too small to contain IV and ciphertext.");
+      }
+      const iv = arrayBuffer.slice(0, 12);
+      const encryptedData = arrayBuffer.slice(12);
+      setOfflineDecryptLogs(prev => [...prev, "[RUN] Extracted 12-byte initialization vector (IV)."]);
+
+      setOfflineDecryptLogs(prev => [...prev, "[RUN] Running AES-GCM decryption with Web Cryptography API..."]);
+      const decryptedBuf = await window.crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv,
+          tagLength: 128
+        },
+        aesKey,
+        encryptedData
+      );
+      setOfflineDecryptLogs(prev => [...prev, "[OK] Decryption and GCM tag authentication successful!"]);
+
+      const uint8 = new Uint8Array(decryptedBuf);
+      const isPdf = uint8[0] === 0x25 && uint8[1] === 0x50 && uint8[2] === 0x44 && uint8[3] === 0x46; // %PDF
+
+      if (isPdf) {
+        setOfflineDecryptLogs(prev => [...prev, "[OK] Sealed PDF payload detected."]);
+        const blob = new Blob([decryptedBuf], { type: 'application/pdf' });
+        const pdfUrl = URL.createObjectURL(blob);
+        setDecryptedPdfUrl(pdfUrl);
+        setUnlocked(true);
+        setOfflineDecryptLogs(prev => [...prev, "[SUCCESS] Offline PDF Exam booklet loaded. Ready for secure printing/viewing."]);
+      } else {
+        setOfflineDecryptLogs(prev => [...prev, "[OK] Text/JSON questions payload detected."]);
+        const text = new TextDecoder().decode(decryptedBuf);
+        const questions = JSON.parse(text);
+        setLocalQuestions(questions);
+        setUnlocked(true);
+        setOfflineDecryptLogs(prev => [...prev, `[SUCCESS] Loaded ${questions.length} questions into offline memory bank.`]);
+      }
+
+      if (addSystemLog) {
+        addSystemLog(`[OFFLINE DECRYPT] Coordinator decrypted bundle at center ${currentUser.centerCode} using key.`);
+      }
+      
+      syncChannel.postMessage({
+        type: 'CENTER_UNLOCKED',
+        payload: { centerCode: currentUser.centerCode }
+      });
+
+    } catch (err) {
+      console.error(err);
+      setOfflineDecryptLogs(prev => [...prev, `[ERROR] Decryption failed: ${err.message || "Invalid authentication tag or key"}`]);
+      alert("Decryption failed. Please verify that the Satellite One-Time Decryption Key is correct and that the file is not corrupted.");
+    } finally {
+      setIsOfflineDecrypting(false);
+    }
+  };
+  
   // Printing states
   const [printCount, setPrintCount] = useState(150);
   const [printedSoFar, setPrintedSoFar] = useState(0);
@@ -300,7 +409,7 @@ export default function CenterDashboard({
     doc.setTextColor(0, 0, 0);
     
     let yPos = 68;
-    const shuffledQs = getShuffledQuestions(recentQuestions || [], candidateRoll);
+    const shuffledQs = getShuffledQuestions(localQuestions || [], candidateRoll);
     drawWatermark(doc);
     
     shuffledQs.forEach((q, idx) => {
@@ -421,6 +530,100 @@ export default function CenterDashboard({
                   <div className="text-text3 italic text-[11px] mt-1">Awaiting broadcast signal token...</div>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Air-Gap Offline Decryptor Panel */}
+          <div className="panel">
+            <div className="panel-header">
+              <div className="panel-title flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-amber-500" />
+                Air-Gap Bundle Decryptor (Web Crypto)
+              </div>
+              <div className={`badge ${unlocked ? 'badge-green' : 'badge-amber'}`}>
+                {unlocked ? 'DECRYPTED' : 'AWAITING BUNDLE'}
+              </div>
+            </div>
+            <div className="panel-body space-y-4">
+              <div className="text-xs text-text2 leading-relaxed">
+                Decrypt NTA sealed exam bundles locally using the browser's hardware-accelerated Web Cryptography API. Completely air-gapped; no network connection required.
+              </div>
+
+              <form onSubmit={handleOfflineDecrypt} className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-text3 uppercase block">Sealed Bundle (.enc) *</label>
+                  <div className="border border-border rounded-lg p-2 bg-bg3 flex items-center gap-2 relative cursor-pointer hover:border-amber-400/50 transition-all">
+                    <Upload className="w-4 h-4 text-text2" />
+                    <span className="text-[10px] text-white truncate max-w-[200px]">
+                      {encFile ? encFile.name : "Select sealed_bundle.enc"}
+                    </span>
+                    <input
+                      type="file"
+                      accept=".enc"
+                      onChange={(e) => setEncFile(e.target.files ? e.target.files[0] : null)}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
+                      disabled={isOfflineDecrypting || unlocked}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-text3 uppercase block">Satellite Decryption Key *</label>
+                  <input
+                    type="password"
+                    value={decryptionKey}
+                    onChange={(e) => setDecryptionKey(e.target.value)}
+                    placeholder="Enter decryption key..."
+                    className="inp font-mono text-xs text-white"
+                    disabled={isOfflineDecrypting || unlocked}
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isOfflineDecrypting || unlocked || !encFile}
+                  className={`w-full py-2.5 rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+                    encFile && !unlocked && !isOfflineDecrypting
+                      ? 'bg-amber-400 text-black hover:bg-amber-300 cursor-pointer shadow-md'
+                      : 'bg-bg3 border border-border text-text3 cursor-not-allowed'
+                  }`}
+                >
+                  <KeyRound className="w-4 h-4" />
+                  {isOfflineDecrypting ? 'Decrypting GCM...' : unlocked ? '✓ Bundle Decrypted' : 'Decrypt & Unlock Bundle'}
+                </button>
+              </form>
+
+              {/* Decrypting Logs console */}
+              <div className="terminal-window h-28 overflow-y-auto">
+                <div className="terminal-line text-text3">[WEB-CRYPTO AIR-GAP DECRYPT LOGS]</div>
+                {offlineDecryptLogs.map((log, idx) => (
+                  <div key={idx} className="terminal-line text-text2 text-[9px]">
+                    <span className="text-text3">&gt;&gt;</span>
+                    <span>{log}</span>
+                  </div>
+                ))}
+              </div>
+
+              {decryptedPdfUrl && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-2">
+                  <div className="text-[10px] text-amber-400 font-bold uppercase flex items-center gap-1.5">
+                    <FileText className="w-3.5 h-3.5" />
+                    Offline PDF Paper Unlocked
+                  </div>
+                  <p className="text-[9px] text-text2 leading-relaxed">
+                    The exam paper was decrypted as a full PDF booklet. You can view, print, or distribute the decrypted sheet directly:
+                  </p>
+                  <a
+                    href={decryptedPdfUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 text-black text-[10px] font-bold uppercase tracking-wider rounded text-center transition-all block shadow-md"
+                  >
+                    👁️ View / Print Decrypted PDF
+                  </a>
+                </div>
+              )}
             </div>
           </div>
 
@@ -683,10 +886,10 @@ export default function CenterDashboard({
                 <div className="h-[1px] bg-border/40 my-3" />
               </div>
 
-              {(recentQuestions || []).length === 0 ? (
+              {(localQuestions || []).length === 0 ? (
                 <div className="text-center text-text2 italic text-xs">No questions generated yet. Awaiting NTA paper generation...</div>
               ) : (
-                getShuffledQuestions(recentQuestions, rollNumber).map((q, idx) => (
+                getShuffledQuestions(localQuestions, rollNumber).map((q, idx) => (
                   <div key={idx} className="p-4 border border-border/50 rounded-lg bg-bg3 space-y-3">
                     <div className="font-bold text-white flex gap-2 text-xs">
                       <span className="text-blue font-mono">Q{idx + 1}.</span>

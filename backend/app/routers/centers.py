@@ -1,3 +1,4 @@
+import os
 import json
 import base64
 from datetime import datetime
@@ -8,7 +9,13 @@ from pydantic import BaseModel
 
 from app.database import get_session, ExamCenter, AuditLedger, QuestionPaper, Question, PaperQuestionLink, Candidate
 from app.redis_client import publish_event, increment_live_counter
-from app.security_utils import verify_rsa_signature, calculate_sha256
+from app.security_utils import (
+    verify_rsa_signature, 
+    calculate_sha256, 
+    encrypt_with_rsa, 
+    generate_aes_key, 
+    encrypt_aes_gcm
+)
 from app.watermarking import embed_watermark_in_pdf
 
 router = APIRouter()
@@ -17,6 +24,19 @@ class DownloadRequest(BaseModel):
     center_id: int
     signature: str # RSA signature of center_id + timestamp
     timestamp: str
+
+class RegisterKeyRequest(BaseModel):
+    rsapub_key: str
+
+@router.post("/{id}/register-key")
+def register_center_key(id: int, req: RegisterKeyRequest, db: Session = Depends(get_session)):
+    center = db.get(ExamCenter, id)
+    if not center:
+        raise HTTPException(status_code=404, detail="Center not found")
+    center.rsapub_key = req.rsapub_key
+    db.add(center)
+    db.commit()
+    return {"status": "SUCCESS", "message": "Center public key registered successfully."}
 
 @router.get("")
 def list_centers(exam_id: Optional[int] = None, db: Session = Depends(get_session)):
@@ -43,19 +63,15 @@ def download_exam_paper(
     # Enforce one-time download rule
     if center.status in ["DOWNLOADED", "PRINTED"]:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN if 'status' in globals() else 403,
+            status_code=403,
             detail="Forbidden: Question paper booklet already downloaded for this exam center. Re-download requires SuperAdmin override token."
         )
         
     # Verify RSA Public Key signature
-    # In a full run, center signs its download request using its private key
-    # If no key is seeded, we verify signature validation:
-    # To facilitate local hackathon demo without heavy key files:
     if center.rsapub_key:
         verification_data = f"{centerId}:{req.timestamp}".encode('utf-8')
         is_valid = verify_rsa_signature(center.rsapub_key, verification_data, req.signature)
         if not is_valid:
-            # Audit log failure
             event_data = {"center_id": centerId, "reason": "RSA public key signature verification failed."}
             audit = AuditLedger(
                 exam_id=None,
@@ -70,16 +86,22 @@ def download_exam_paper(
             raise HTTPException(status_code=401, detail="Unauthorized: Cryptographic RSA signature check failed.")
 
     # Find the active sealed paper
-    # For NEET, active exam = 1. Let's find first sealed paper
     paper = db.exec(select(QuestionPaper).where(QuestionPaper.status == "SEALED")).first()
     if not paper:
         raise HTTPException(status_code=404, detail="No sealed question paper found for distribution.")
         
-    # Assemble PDF paper buffer (or simulated booklet buffer)
-    raw_pdf_content = b"OMNISHIELD SECURED EXAM BOOKLET PDF BUFFER. " * 50
+    # Assemble PDF paper buffer (use real PDF if available on disk)
+    raw_pdf_content = b""
+    if paper.encrypted_blob_url and os.path.exists(paper.encrypted_blob_url):
+        try:
+            with open(paper.encrypted_blob_url, "rb") as f:
+                raw_pdf_content = f.read()
+        except Exception:
+            raw_pdf_content = b"OMNISHIELD SECURED EXAM BOOKLET PDF BUFFER. " * 50
+    else:
+        raw_pdf_content = b"OMNISHIELD SECURED EXAM BOOKLET PDF BUFFER. " * 50
     
     # Apply DWT-SVD Watermark for this center's candidate batch
-    # In Celery/background: embeds center code and candidate ID into PDF
     watermarked_pdf = embed_watermark_in_pdf(raw_pdf_content, center.name[:4].upper(), f"BATCH_{centerId}")
     
     # Calculate checksum of serve blob
@@ -116,16 +138,40 @@ def download_exam_paper(
         "status": "DOWNLOADED"
     })
     
-    # Return file content base64 encoded or dynamic download URL
-    # For this API, we return b64 data + hash
-    pdf_b64 = base64.b64encode(watermarked_pdf).decode('utf-8')
+    # Envelope encryption using the center's public key (if registered)
+    pdf_b64 = ""
+    encrypted_aes_key = ""
+    iv_b64 = ""
+    tag_b64 = ""
+    is_encrypted = False
+    
+    if center.rsapub_key:
+        try:
+            aes_key = generate_aes_key()
+            ciphertext, iv, tag = encrypt_aes_gcm(watermarked_pdf, aes_key)
+            encrypted_aes_key = encrypt_with_rsa(center.rsapub_key, aes_key)
+            pdf_b64 = base64.b64encode(ciphertext).decode('utf-8')
+            iv_b64 = base64.b64encode(iv).decode('utf-8')
+            tag_b64 = base64.b64encode(tag).decode('utf-8')
+            is_encrypted = True
+        except Exception as e:
+            print(f"Error doing envelope encryption: {e}")
+            pdf_b64 = base64.b64encode(watermarked_pdf).decode('utf-8')
+    else:
+        pdf_b64 = base64.b64encode(watermarked_pdf).decode('utf-8')
+        
     return {
         "status": "SUCCESS",
         "center_code": center.operator_id,
         "hash": download_hash,
         "pdf_base64": pdf_b64,
+        "encrypted_aes_key": encrypted_aes_key,
+        "iv": iv_b64,
+        "tag": tag_b64,
+        "is_encrypted": is_encrypted,
         "expires_in_minutes": 10
     }
+
 
 @router.post("/{id}/checkin")
 def candidate_checkin(id: int, roll_number: str, present: bool, db: Session = Depends(get_session)):

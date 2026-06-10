@@ -36,6 +36,7 @@ export default function CenterDashboard() {
   // Security elements
   const [devToolsOpen, setDevToolsOpen] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
 
   // Live counters
   const [stats, setStats] = useState({
@@ -152,7 +153,7 @@ export default function CenterDashboard() {
       // Since candidates are seeded in DB, let's load candidates directly
       // Fallback candidates if API lags
       const simulatedCandidates = Array.from({ length: 150 }).map((_, i) => ({
-        roll_number: `ROLL#2026${(i + 1 + (id * 100)):04d}`,
+        roll_number: `ROLL#2026${String(i + 1 + (id * 100)).padStart(4, '0')}`,
         name: `Student Candidate #${i+1}`,
         status: i % 12 === 0 ? 'ABSENT' : (i % 5 === 0 ? 'REGISTERED' : 'CHECKED_IN'),
         category: i % 25 === 0 ? 'PwD' : 'GEN',
@@ -206,6 +207,18 @@ export default function CenterDashboard() {
 
     return () => clearInterval(interval);
   }, [authorized, unlockTime, status]);
+
+  // Paper Preview fetcher
+  useEffect(() => {
+    if (showPreview && token && !previewHtml) {
+      fetch('http://localhost:8001/api/papers/1/preview', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(res => res.text())
+        .then(html => setPreviewHtml(html))
+        .catch(err => console.error('Error fetching paper preview:', err));
+    }
+  }, [showPreview, token, previewHtml]);
 
   // 3. WebSockets setup
   useEffect(() => {
@@ -846,8 +859,7 @@ export default function CenterDashboard() {
 
                   {/* Sandboxed iframe */}
                   <iframe 
-                    src={`http://localhost:8001/api/papers/1/preview`}
-                    headers={{ 'Authorization': `Bearer ${token}` }}
+                    srcDoc={previewHtml}
                     className="w-full h-full border-none select-none pointer-events-none"
                     sandbox="allow-same-origin"
                   />

@@ -39,6 +39,20 @@ export default function Phase1Tab({
   const [ocrWizardStep, setOcrWizardStep] = useState(1); // 1 = Upload, 2 = Process, 3 = Review
   const [ocrPaperId, setOcrPaperId] = useState(null);
 
+  // PDF Paper Direct Upload States
+  const [pdfPaperFile, setPdfPaperFile] = useState(null);
+  const [pdfPaperName, setPdfPaperName] = useState('');
+  const [pdfExamName, setPdfExamName] = useState('NEET UG 2026');
+  const [pdfExamDate, setPdfExamDate] = useState(new Date().toISOString().slice(0, 10));
+  const [pdfShift, setPdfShift] = useState('Morning');
+  const [pdfSetCode, setPdfSetCode] = useState('A');
+  const [pdfExamTypeId, setPdfExamTypeId] = useState(1);
+  const [pdfDuration, setPdfDuration] = useState(180);
+  const [pdfSecurityLevel, setPdfSecurityLevel] = useState('HIGH');
+  const [pdfUploading, setPdfUploading] = useState(false);
+  const [pdfUploadResult, setPdfUploadResult] = useState(null);
+  const [pdfDragging, setPdfDragging] = useState(false);
+
   const fetchOcrStaged = async (paperId) => {
     try {
       const res = await fetch(`http://localhost:8001/api/questions/staged-questions/${paperId}`);
@@ -221,7 +235,45 @@ export default function Phase1Tab({
       console.error("Error deploying staged questions:", err);
     }
   };
-  
+
+  const handlePdfPaperUpload = async (e) => {
+    e.preventDefault();
+    if (!pdfPaperFile) { alert('Please select a PDF file.'); return; }
+    if (!pdfPaperName.trim()) { alert('Please enter a paper name.'); return; }
+    if (!pdfExamName.trim()) { alert('Please enter an exam name.'); return; }
+    if (!pdfExamDate.trim()) { alert('Please enter the exam date.'); return; }
+
+    setPdfUploading(true);
+    setPdfUploadResult(null);
+
+    const formData = new FormData();
+    formData.append('paper_name', pdfPaperName);
+    formData.append('exam_name', pdfExamName);
+    formData.append('exam_date', pdfExamDate);
+    formData.append('shift', pdfShift);
+    formData.append('set_code', pdfSetCode);
+    formData.append('exam_type_id', String(pdfExamTypeId));
+    formData.append('duration', String(pdfDuration));
+    formData.append('security_level', pdfSecurityLevel);
+    formData.append('file', pdfPaperFile);
+
+    try {
+      const res = await fetch('http://localhost:8001/api/papers/upload-pdf', {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': 'test_csrf_token' },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Upload failed');
+      setPdfUploadResult(data);
+      addSystemLog(`[PDF PAPER] Uploaded & sealed: "${data.paper_name}" (Paper #${data.paper_id}, Hash: ${data.paper_hash?.slice(0, 16)}...)`);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setPdfUploading(false);
+    }
+  };
+
   // State for manual question entry form
   const [manualQuestion, setManualQuestion] = useState('');
   const [manualSubject, setManualSubject] = useState('Biology');
@@ -799,6 +851,13 @@ export default function Phase1Tab({
                       >
                         Paste Sheet Text
                       </button>
+                      <button 
+                        type="button"
+                        onClick={() => setOcrActiveTab('pdf-paper')} 
+                        className={`text-xs font-bold uppercase tracking-wider ${ocrActiveTab === 'pdf-paper' ? 'text-white border-b-2 border-amber-400 pb-1' : 'text-text2'}`}
+                      >
+                        📄 Upload PDF Paper
+                      </button>
                     </div>
 
                     {ocrActiveTab === 'upload' ? (
@@ -827,13 +886,164 @@ export default function Phase1Tab({
                       </div>
                     )}
 
-                    <button 
-                      type="submit"
-                      className="w-full py-2 bg-gradient-to-r from-blue to-green-400 hover:from-blue/90 hover:to-green-400/90 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition-all shadow-lg"
-                    >
-                      🚀 Start AI OCR Parser
-                    </button>
+                    {ocrActiveTab !== 'pdf-paper' && (
+                      <button 
+                        type="submit"
+                        className="w-full py-2 bg-gradient-to-r from-blue to-green-400 hover:from-blue/90 hover:to-green-400/90 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition-all shadow-lg"
+                      >
+                        🚀 Start AI OCR Parser
+                      </button>
+                    )}
                   </form>
+
+                  {/* ───────── Upload PDF as Sealed Paper ───────── */}
+                  {ocrActiveTab === 'pdf-paper' && (
+                    <form onSubmit={handlePdfPaperUpload} className="space-y-3 mt-2">
+                      {/* Drop zone */}
+                      <div
+                        onDragOver={(e) => { e.preventDefault(); setPdfDragging(true); }}
+                        onDragLeave={() => setPdfDragging(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setPdfDragging(false);
+                          const dropped = e.dataTransfer.files[0];
+                          if (dropped && dropped.name.toLowerCase().endsWith('.pdf')) {
+                            setPdfPaperFile(dropped);
+                          } else {
+                            alert('Only PDF files are accepted here.');
+                          }
+                        }}
+                        className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all relative ${
+                          pdfDragging ? 'border-amber-400 bg-amber-400/5' : 'border-border hover:border-amber-400/50 bg-bg3/30'
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          accept=".pdf"
+                          onChange={(e) => setPdfPaperFile(e.target.files ? e.target.files[0] : null)}
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                        />
+                        {pdfPaperFile ? (
+                          <>
+                            <span className="text-3xl mb-2">📄</span>
+                            <span className="text-xs text-amber-400 font-bold">{pdfPaperFile.name}</span>
+                            <span className="text-[9px] text-text3 mt-1">{(pdfPaperFile.size / 1024).toFixed(1)} KB — Click or drag to replace</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-3xl mb-2">📥</span>
+                            <span className="text-xs text-white font-medium">Drag & Drop complete exam PDF here</span>
+                            <span className="text-[9px] text-text3 mt-1">Or click to browse — PDF files only</span>
+                            <span className="text-[9px] text-amber-400/70 mt-1">This will be sealed as the final question paper</span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Metadata fields */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1 col-span-2">
+                          <label className="text-[9px] font-mono text-text3 uppercase block">Paper Name *</label>
+                          <input
+                            type="text"
+                            value={pdfPaperName}
+                            onChange={(e) => setPdfPaperName(e.target.value)}
+                            placeholder="e.g. NEET UG 2026 — Morning Set A"
+                            className="inp text-xs"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono text-text3 uppercase block">Exam Name *</label>
+                          <input
+                            type="text"
+                            value={pdfExamName}
+                            onChange={(e) => setPdfExamName(e.target.value)}
+                            placeholder="NEET UG 2026"
+                            className="inp text-xs"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono text-text3 uppercase block">Exam Date *</label>
+                          <input
+                            type="date"
+                            value={pdfExamDate}
+                            onChange={(e) => setPdfExamDate(e.target.value)}
+                            className="inp text-xs"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono text-text3 uppercase block">Shift</label>
+                          <select value={pdfShift} onChange={(e) => setPdfShift(e.target.value)} className="inp text-xs">
+                            <option>Morning</option>
+                            <option>Afternoon</option>
+                            <option>Evening</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono text-text3 uppercase block">Set Code</label>
+                          <select value={pdfSetCode} onChange={(e) => setPdfSetCode(e.target.value)} className="inp text-xs">
+                            <option>A</option>
+                            <option>B</option>
+                            <option>C</option>
+                            <option>D</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono text-text3 uppercase block">Duration (min)</label>
+                          <input
+                            type="number"
+                            value={pdfDuration}
+                            onChange={(e) => setPdfDuration(Number(e.target.value))}
+                            className="inp text-xs"
+                            min={30} max={360}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono text-text3 uppercase block">Security Level</label>
+                          <select value={pdfSecurityLevel} onChange={(e) => setPdfSecurityLevel(e.target.value)} className="inp text-xs">
+                            <option>LOW</option>
+                            <option>MEDIUM</option>
+                            <option>HIGH</option>
+                            <option>CRITICAL</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Result banner */}
+                      {pdfUploadResult && (
+                        <div className="rounded-xl bg-green-500/10 border border-green-500/30 p-3 space-y-1">
+                          <p className="text-[10px] font-bold text-green-400 uppercase">✅ Paper Sealed Successfully</p>
+                          <p className="text-[9px] text-text2">Paper ID: <span className="text-white font-mono">#{pdfUploadResult.paper_id}</span></p>
+                          <p className="text-[9px] text-text2">Exam ID: <span className="text-white font-mono">#{pdfUploadResult.exam_id}</span></p>
+                          <p className="text-[9px] text-text2">Set: <span className="text-white font-mono">{pdfUploadResult.set_code}</span> | Size: <span className="text-white font-mono">{(pdfUploadResult.file_size_bytes / 1024).toFixed(1)} KB</span></p>
+                          <p className="text-[9px] text-text3 font-mono break-all">SHA-256: {pdfUploadResult.paper_hash}</p>
+                          <button
+                            type="button"
+                            onClick={() => { setPdfUploadResult(null); setPdfPaperFile(null); setPdfPaperName(''); }}
+                            className="text-[9px] text-amber-400 hover:text-amber-300 underline mt-1"
+                          >
+                            Upload another paper
+                          </button>
+                        </div>
+                      )}
+
+                      {!pdfUploadResult && (
+                        <button
+                          type="submit"
+                          disabled={pdfUploading || !pdfPaperFile}
+                          className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs uppercase tracking-wider rounded-lg transition-all shadow-lg flex items-center justify-center gap-2"
+                        >
+                          {pdfUploading ? (
+                            <><span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" /> Uploading & Sealing...</>
+                          ) : (
+                            <>🔐 Upload & Seal PDF Paper</>
+                          )}
+                        </button>
+                      )}
+                    </form>
+                  )}
                 </div>
               </div>
             )}

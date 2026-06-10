@@ -1,15 +1,21 @@
 import json
+import os
+import shutil
 from typing import List, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlmodel import Session, select
 from pydantic import BaseModel
 
-from app.database import get_session, Question, QuestionPaper, PaperQuestionLink, AuditLedger, Exam
+from app.database import get_session, Question, QuestionPaper, PaperQuestionLink, AuditLedger, Exam, ExamType
 from app.redis_client import publish_event
 from app.security_utils import seal_paper_blob, calculate_sha256
 
 router = APIRouter()
+
+# Directory to store uploaded PDF papers
+PDF_UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "uploaded_papers")
+os.makedirs(PDF_UPLOAD_DIR, exist_ok=True)
 
 class AutoBuildRules(BaseModel):
     exam_id: int
@@ -339,3 +345,122 @@ def preview_paper(
     """
     return HTMLResponse(content=html_content)
 
+
+# ─────────────────────────────────────────────────────────────
+# POST /api/papers/upload-pdf  — Direct PDF paper upload
+# ─────────────────────────────────────────────────────────────
+@router.post("/upload-pdf")
+async def upload_pdf_paper(
+    paper_name: str = Form(...),
+    exam_name: str = Form(...),
+    exam_date: str = Form(...),
+    shift: str = Form("Morning"),
+    set_code: str = Form("A"),
+    exam_type_id: int = Form(1),
+    duration: int = Form(180),
+    security_level: str = Form("HIGH"),
+    sealed_by: str = Form("admin"),
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+):
+    """
+    Upload a complete PDF file as a sealed exam paper.
+    Creates an Exam record, stores the PDF file, calculates its hash,
+    and creates a SEALED QuestionPaper record.
+    """
+    # --- validate file type ---
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted for direct paper upload.")
+
+    # --- read PDF bytes ---
+    pdf_bytes = await file.read()
+    if len(pdf_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded PDF file is empty.")
+
+    # --- compute SHA-256 hash ---
+    import hashlib
+    paper_hash = hashlib.sha256(pdf_bytes).hexdigest()
+
+    # --- ensure exam type exists, create default if not ---
+    exam_type = session.get(ExamType, exam_type_id)
+    if not exam_type:
+        # Create a default exam type
+        exam_type = ExamType(id=exam_type_id, name="General Examination", category="Entrance", default_config_json="{}")
+        session.add(exam_type)
+        session.flush()
+
+    # --- create the Exam record ---
+    exam = Exam(
+        exam_type_id=exam_type_id,
+        name=exam_name,
+        date=exam_date,
+        shift=shift,
+        duration=duration,
+        status="SEALED",
+        security_level=security_level,
+        config_json="{}",
+        created_by=sealed_by,
+    )
+    session.add(exam)
+    session.flush()
+
+    # --- save PDF to disk ---
+    safe_filename = f"paper_{exam.id}_{set_code}_{paper_hash[:8]}.pdf"
+    save_path = os.path.join(PDF_UPLOAD_DIR, safe_filename)
+    with open(save_path, "wb") as f_out:
+        f_out.write(pdf_bytes)
+
+    # --- create QuestionPaper record ---
+    paper = QuestionPaper(
+        exam_id=exam.id,
+        name=paper_name,
+        status="SEALED",
+        sealed_at=datetime.utcnow(),
+        sealed_by=sealed_by,
+        encrypted_blob_url=save_path,
+        paper_hash=paper_hash,
+        set_code=set_code,
+    )
+    session.add(paper)
+    session.flush()
+
+    # --- audit log ---
+    audit = AuditLedger(
+        exam_id=exam.id,
+        event_type="PDF_PAPER_UPLOADED",
+        actor=sealed_by,
+        details_json=json.dumps({
+            "paper_id": paper.id,
+            "paper_name": paper_name,
+            "filename": file.filename,
+            "file_size_bytes": len(pdf_bytes),
+            "paper_hash": paper_hash,
+            "set_code": set_code,
+        }),
+    )
+    session.add(audit)
+    session.commit()
+
+    # --- publish event ---
+    try:
+        await publish_event("paper_events", {
+            "type": "PDF_PAPER_UPLOADED",
+            "paper_id": paper.id,
+            "exam_id": exam.id,
+            "paper_name": paper_name,
+            "paper_hash": paper_hash,
+        })
+    except Exception:
+        pass  # Redis publish is non-critical
+
+    return {
+        "success": True,
+        "paper_id": paper.id,
+        "exam_id": exam.id,
+        "paper_name": paper_name,
+        "paper_hash": paper_hash,
+        "file_size_bytes": len(pdf_bytes),
+        "set_code": set_code,
+        "status": "SEALED",
+        "message": f"PDF paper '{paper_name}' uploaded and sealed successfully.",
+    }

@@ -2,7 +2,7 @@ import json
 import os
 from typing import List, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from sqlmodel import Session, select
 from pydantic import BaseModel
 
@@ -168,6 +168,7 @@ async def import_paper_document(
     language: str = Form(...),
     upload_purpose: str = Form(...),
     file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_session)
 ):
     upload_dir = "public/uploads"
@@ -220,7 +221,15 @@ async def import_paper_document(
     db.commit()
     
     # Trigger Celery Worker process simulation
-    process_paper_upload_pipeline.delay(paper.id)
+    try:
+        process_paper_upload_pipeline.delay(paper.id)
+    except Exception as e:
+        print(f"Warning: Celery broker offline. Processing in background thread. Error: {e}")
+        if background_tasks:
+            background_tasks.add_task(process_paper_upload_pipeline, paper.id)
+        else:
+            import threading
+            threading.Thread(target=process_paper_upload_pipeline, args=(paper.id,)).start()
     
     return {"status": "SUCCESS", "paper_id": paper.id, "extracted_count": total_extracted}
 
@@ -282,12 +291,26 @@ def bulk_approve_green_questions(paper_id: int, db: Session = Depends(get_sessio
     return {"status": "SUCCESS", "approved_count": len(qs)}
 
 @router.post("/uploaded-papers/{paper_id}/import-trigger")
-def trigger_final_import(paper_id: int, operator: str = "board_admin", db: Session = Depends(get_session)):
+def trigger_final_import(
+    paper_id: int, 
+    operator: str = "board_admin", 
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_session)
+):
     """
     Triggers celery task to push reviewed items into primary bank.
     """
     # Trigger task
-    final_import_to_bank.delay(paper_id, operator)
+    try:
+        final_import_to_bank.delay(paper_id, operator)
+    except Exception as e:
+        print(f"Warning: Celery broker offline. Running import task in background. Error: {e}")
+        if background_tasks:
+            background_tasks.add_task(final_import_to_bank, paper_id, operator)
+        else:
+            import threading
+            threading.Thread(target=final_import_to_bank, args=(paper_id, operator)).start()
+            
     return {"status": "SUCCESS", "message": "Celery import task queued."}
 
 @router.post("/{id}/approve")

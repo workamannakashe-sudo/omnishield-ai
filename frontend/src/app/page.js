@@ -12,6 +12,15 @@ import { jsPDF } from 'jspdf';
 
 export default function CommandCenterApp() {
   const [role, setRole] = useState('SuperAdmin'); // SuperAdmin, ExamBoard, Center, Invigilator, Candidate
+  const [currentUser, setCurrentUser] = useState(null);
+  const [token, setToken] = useState('');
+  const [loginUser, setLoginUser] = useState('');
+  const [loginPass, setLoginPass] = useState('');
+  const [loginRole, setLoginRole] = useState('nta'); // 'nta' | 'center'
+  const [centerCode, setCenterCode] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
   const [activeTab, setActiveTab] = useState('overview');
   const [isWsConnected, setIsWsConnected] = useState(false);
   const [activeExam, setActiveExam] = useState(1);
@@ -116,6 +125,167 @@ export default function CommandCenterApp() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // PDF Paper Direct Upload States
+  const [pdfPaperFile, setPdfPaperFile] = useState(null);
+  const [pdfPaperName, setPdfPaperName] = useState('');
+  const [pdfExamName, setPdfExamName] = useState('NEET UG 2026');
+  const [pdfExamDate, setPdfExamDate] = useState(new Date().toISOString().slice(0, 10));
+  const [pdfShift, setPdfShift] = useState('Morning');
+  const [pdfSetCode, setPdfSetCode] = useState('A');
+  const [pdfExamTypeId, setPdfExamTypeId] = useState(1);
+  const [pdfDuration, setPdfDuration] = useState(180);
+  const [pdfSecurityLevel, setPdfSecurityLevel] = useState('HIGH');
+  const [pdfUploading, setPdfUploading] = useState(false);
+  const [pdfUploadResult, setPdfUploadResult] = useState(null);
+  const [pdfDragging, setPdfDragging] = useState(false);
+  const [generationSubTab, setGenerationSubTab] = useState('rag'); // 'rag' | 'ocr' | 'pdf-sealed'
+
+  // Authentication & Session Restorer useEffect
+  useEffect(() => {
+    const savedToken = localStorage.getItem('auth_token');
+    const savedRole = localStorage.getItem('user_role');
+    const savedUser = localStorage.getItem('username');
+    if (savedRole === 'Center') {
+      window.location.href = '/center/dashboard';
+    } else if (savedToken && (savedRole === 'SuperAdmin' || savedRole === 'ExamBoard')) {
+      setToken(savedToken);
+      setRole(savedRole);
+      setCurrentUser({ username: savedUser, role: savedRole, token: savedToken });
+    }
+  }, []);
+
+  const handleLoginSubmit = async (e) => {
+    e.preventDefault();
+    setLoginError('');
+    setIsLoggingIn(true);
+
+    if (!loginUser || !loginPass) {
+      setLoginError('Please enter username and password.');
+      setIsLoggingIn(false);
+      return;
+    }
+
+    if (loginRole === 'center' && !centerCode) {
+      setLoginError('Center Code is required for Center Coordinators.');
+      setIsLoggingIn(false);
+      return;
+    }
+
+    try {
+      const res = await fetch('http://localhost:8001/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: loginUser, password: loginPass })
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.detail || 'Invalid username or password.');
+      }
+
+      const dbRole = data.role;
+      if (loginRole === 'nta' && dbRole !== 'SuperAdmin' && dbRole !== 'ExamBoard') {
+        throw new Error('Access denied: User is not an NTA administrator.');
+      }
+      if (loginRole === 'center' && dbRole !== 'Center') {
+        throw new Error('Access denied: User is not a center operator.');
+      }
+
+      localStorage.setItem('auth_token', data.access_token);
+      localStorage.setItem('user_role', dbRole);
+      localStorage.setItem('username', data.username);
+      localStorage.setItem('center_id', String(data.center_id || 1));
+
+      if (loginRole === 'center') {
+        window.location.href = '/center/dashboard';
+      } else {
+        setToken(data.access_token);
+        setRole(dbRole);
+        setCurrentUser({ username: data.username, role: dbRole, token: data.access_token });
+      }
+    } catch (err) {
+      console.warn("Backend auth failed, trying offline/local storage fallback", err);
+      const defaultUsers = [
+        { username: 'admin', password: 'admin123', role: 'nta', dbRole: 'SuperAdmin' },
+        { username: 'board_admin', password: 'board123', role: 'nta', dbRole: 'ExamBoard' },
+        { username: 'center402', password: 'center123', role: 'center', dbRole: 'Center', centerCode: 'IN-MH-402', centerId: 1 },
+        { username: 'operator_delhi', password: 'center123', role: 'center', dbRole: 'Center', centerCode: 'IN-DL-021', centerId: 1 }
+      ];
+
+      const foundUser = defaultUsers.find(u => 
+        u.username.toLowerCase() === loginUser.toLowerCase() && 
+        u.password === loginPass &&
+        u.role === loginRole
+      );
+
+      if (!foundUser) {
+        setLoginError(err.message || 'Invalid username, password, or role.');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      if (loginRole === 'center' && foundUser.centerCode !== centerCode.toUpperCase()) {
+        setLoginError('Invalid Center Code for this user.');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      localStorage.setItem('auth_token', 'offline_token_val');
+      localStorage.setItem('user_role', foundUser.dbRole);
+      localStorage.setItem('username', foundUser.username);
+      localStorage.setItem('center_id', String(foundUser.centerId || 1));
+
+      if (loginRole === 'center') {
+        window.location.href = '/center/dashboard';
+      } else {
+        setToken('offline_token_val');
+        setRole(foundUser.dbRole);
+        setCurrentUser({ username: foundUser.username, role: foundUser.dbRole, token: 'offline_token_val' });
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handlePdfPaperUpload = async (e) => {
+    e.preventDefault();
+    if (!pdfPaperFile) { alert('Please select a PDF file.'); return; }
+    if (!pdfPaperName.trim()) { alert('Please enter a paper name.'); return; }
+    if (!pdfExamName.trim()) { alert('Please enter an exam name.'); return; }
+    if (!pdfExamDate.trim()) { alert('Please enter the exam date.'); return; }
+
+    setPdfUploading(true);
+    setPdfUploadResult(null);
+
+    const formData = new FormData();
+    formData.append('paper_name', pdfPaperName);
+    formData.append('exam_name', pdfExamName);
+    formData.append('exam_date', pdfExamDate);
+    formData.append('shift', pdfShift);
+    formData.append('set_code', pdfSetCode);
+    formData.append('exam_type_id', String(pdfExamTypeId));
+    formData.append('duration', String(pdfDuration));
+    formData.append('security_level', pdfSecurityLevel);
+    formData.append('file', pdfPaperFile);
+
+    try {
+      const res = await fetch('http://localhost:8001/api/papers/upload-pdf', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token || 'offline_token_val'}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Upload failed');
+      setPdfUploadResult(data);
+      addLog("green", `[PDF PAPER] Uploaded and sealed: "${data.paper_name}" (Paper #${data.paper_id})`);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setPdfUploading(false);
+    }
+  };
 
   // State for manual question entry form
   const [manualQuestion, setManualQuestion] = useState('');
@@ -524,6 +694,131 @@ export default function CommandCenterApp() {
     }, 1000);
   };
 
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-[#05080d] text-white flex flex-col justify-center items-center font-display relative overflow-hidden">
+        {/* background grid */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(30,45,61,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(30,45,61,0.05)_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(46,184,255,0.05),transparent)] pointer-events-none" />
+        
+        <div className="w-full max-w-md bg-[#080d14] border border-[#162030] rounded-2xl p-8 shadow-2xl space-y-6 relative z-10">
+          <div className="flex flex-col items-center">
+            <div className="w-14 h-14 bg-[#2eb8ff]/10 rounded-full border border-[#2eb8ff]/30 flex items-center justify-center mb-4">
+              <Shield className="w-7 h-7 text-[#2eb8ff]" />
+            </div>
+            <h1 className="text-xl font-bold tracking-wide text-white bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-300 to-[#2eb8ff]">OMNISHIELD AI PORTAL</h1>
+            <p className="text-[10px] text-gray-400 font-mono tracking-widest uppercase mt-1">Secure Authentication Gateway</p>
+          </div>
+
+          {/* Toggle Group */}
+          <div className="grid grid-cols-2 gap-2 bg-[#05080d] p-1 border border-[#162030] rounded-xl">
+            <button
+              type="button"
+              onClick={() => {
+                setLoginRole('nta');
+                if (loginUser === 'operator_delhi' || loginUser === 'center402') setLoginUser('board_admin');
+              }}
+              className={`py-2 rounded-lg text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
+                loginRole === 'nta'
+                  ? 'bg-[#2eb8ff] text-black font-bold shadow'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Shield className="w-3.5 h-3.5" /> NTA Admin
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginRole('center');
+                if (loginUser === 'board_admin' || loginUser === 'admin') setLoginUser('operator_delhi');
+              }}
+              className={`py-2 rounded-lg text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
+                loginRole === 'center'
+                  ? 'bg-[#2eb8ff] text-black font-bold shadow'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Server className="w-3.5 h-3.5" /> Center Terminal
+            </button>
+          </div>
+
+          <form onSubmit={handleLoginSubmit} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-xs font-mono text-gray-400 uppercase">Username</label>
+              <input
+                type="text"
+                value={loginUser}
+                onChange={(e) => setLoginUser(e.target.value)}
+                placeholder={loginRole === 'nta' ? 'board_admin' : 'operator_delhi'}
+                className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-sm text-white outline-none focus:border-[#2eb8ff]"
+                required
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-mono text-gray-400 uppercase">Password</label>
+              <input
+                type="password"
+                value={loginPass}
+                onChange={(e) => setLoginPass(e.target.value)}
+                placeholder="••••••••••••"
+                className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-sm text-white outline-none focus:border-[#2eb8ff]"
+                required
+              />
+            </div>
+
+            {loginRole === 'center' && (
+              <div className="space-y-1">
+                <label className="text-xs font-mono text-gray-400 uppercase">Center Code</label>
+                <input
+                  type="text"
+                  value={centerCode}
+                  onChange={(e) => setCenterCode(e.target.value)}
+                  placeholder="e.g. IN-DL-021"
+                  className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-sm text-white outline-none focus:border-[#2eb8ff] font-mono"
+                  required
+                />
+              </div>
+            )}
+
+            {loginError && (
+              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-[#ff3b5c] flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full py-3 bg-[#2eb8ff] hover:bg-[#2eb8ff]/90 disabled:bg-[#2eb8ff]/40 text-black font-bold rounded-xl text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg"
+            >
+              {isLoggingIn ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+              {isLoggingIn ? 'Authenticating...' : `Sign In as ${loginRole === 'nta' ? 'Admin' : 'Center Operator'}`}
+            </button>
+          </form>
+
+          {/* Credentials Box */}
+          <div className="bg-[#05080d] border border-[#162030] rounded-xl p-4 space-y-2 text-[10px] font-mono text-gray-400">
+            <div className="text-white font-bold text-center border-b border-[#162030] pb-1.5 mb-1.5">DEMO SIGN-IN CREDENTIALS</div>
+            {loginRole === 'nta' ? (
+              <div>
+                <span className="text-[#2eb8ff]">NTA Username:</span> <span className="text-white">board_admin</span><br />
+                <span className="text-[#2eb8ff]">NTA Password:</span> <span className="text-white">board123</span>
+              </div>
+            ) : (
+              <div>
+                <span className="text-green font-semibold">Center Username:</span> <span className="text-white">operator_delhi</span><br />
+                <span className="text-green font-semibold">Center Password:</span> <span className="text-white">center123</span><br />
+                <span className="text-green font-semibold">Center Code:</span> <span className="text-white">IN-DL-021</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-bg text-gray-200 selection:bg-blue/30 relative font-display scanlines pb-10">
       
@@ -584,6 +879,15 @@ export default function CommandCenterApp() {
             </div>
 
             <div className="text-gray-300 tracking-wider">{clockTime}</div>
+            <button
+              onClick={() => {
+                localStorage.clear();
+                setCurrentUser(null);
+              }}
+              className="ml-2 px-2.5 py-1 rounded bg-[#080d14] border border-[#162030] text-[10px] text-gray-400 hover:text-white transition-all font-mono uppercase font-semibold"
+            >
+              Sign Out
+            </button>
           </div>
         </div>
       </header>
@@ -924,254 +1228,445 @@ export default function CommandCenterApp() {
                 </div>
               )}
 
-            </div>
-          )}
-
-          {/* TAB 3: QUESTION BANK & OCR */}
+                    {/* TAB 3: QUESTION BANK & OCR */}
           {activeTab === 'generation' && (
             <div className="space-y-6">
-              
-              {/* Manual/AI Question generation config */}
-              <div className="bg-panel border border-borderCls rounded-xl p-6 space-y-4">
-                <div className="pb-3 border-b border-borderCls">
-                  <h3 className="text-xs font-bold uppercase text-white">AI Question Generation Pipeline</h3>
-                </div>
-
-                <div className="grid grid-cols-4 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-gray-400 uppercase">Subject</label>
-                    <select value={genSubject} onChange={(e) => setGenSubject(e.target.value)} className="w-full bg-bg border border-borderCls rounded p-2 text-xs text-white">
-                      <option value="Biology">Biology</option>
-                      <option value="Physics">Physics</option>
-                      <option value="Chemistry">Chemistry</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-gray-400 uppercase">Difficulty</label>
-                    <select value={genDifficulty} onChange={(e) => setGenDifficulty(e.target.value)} className="w-full bg-bg border border-borderCls rounded p-2 text-xs text-white">
-                      <option value="Easy">Easy</option>
-                      <option value="Medium">Medium</option>
-                      <option value="Hard">Hard</option>
-                      <option value="Very Hard">Very Hard</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-gray-400 uppercase">Format</label>
-                    <select value={genType} onChange={(e) => setGenType(e.target.value)} className="w-full bg-bg border border-borderCls rounded p-2 text-xs text-white">
-                      <option value="MCQ_single">MCQ Single Correct</option>
-                      <option value="MCQ_multiple">MCQ Multi Correct</option>
-                      <option value="Numerical">Numerical/Integer</option>
-                    </select>
-                  </div>
-                  <div className="flex items-end">
-                    <button 
-                      onClick={triggerGen}
-                      disabled={isGenerating}
-                      className="w-full py-2 bg-blue hover:bg-blue/90 disabled:bg-blue/40 text-white rounded text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5"
-                    >
-                      {isGenerating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                      {isGenerating ? 'Drafting...' : 'Run Pipeline'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Staging Pipeline steps display */}
-                {isGenerating && (
-                  <div className="grid grid-cols-5 gap-2 pt-3 border-t border-borderCls/30">
-                    {["Drafting", "Similarity Scan", "Validator Review", "Bloom Classifier", "AES Encrypt"].map((s, idx) => (
-                      <div key={idx} className="bg-bg border border-borderCls p-2 rounded text-center animate-pulse">
-                        <span className="text-[8px] font-mono text-gray-400 block uppercase">Step {idx + 1}</span>
-                        <span className="text-[10px] text-blue font-semibold mt-0.5 block">{s}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              {/* Sub-tab Navigation */}
+              <div className="flex gap-2 p-1 bg-[#080d14] border border-[#162030] rounded-xl">
+                <button 
+                  type="button"
+                  onClick={() => setGenerationSubTab('rag')}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold tracking-wider uppercase transition-all ${generationSubTab === 'rag' ? 'bg-[#2eb8ff] text-black font-bold shadow' : 'text-gray-400 hover:text-white hover:bg-[#162030]/50'}`}
+                >
+                  🤖 AI RAG & Manual Entry
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setGenerationSubTab('ocr')}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold tracking-wider uppercase transition-all ${generationSubTab === 'ocr' ? 'bg-[#2eb8ff] text-black font-bold shadow' : 'text-gray-400 hover:text-white hover:bg-[#162030]/50'}`}
+                >
+                  📸 OCR Direct Uploader
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setGenerationSubTab('pdf-sealed')}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-semibold tracking-wider uppercase transition-all ${generationSubTab === 'pdf-sealed' ? 'bg-[#2eb8ff] text-black font-bold shadow' : 'text-gray-400 hover:text-white hover:bg-[#162030]/50'}`}
+                >
+                  📄 Direct PDF Sealed Paper
+                </button>
               </div>
 
-              {/* Manual Question Registration Panel */}
-              <div className="bg-panel border border-borderCls rounded-xl p-6 space-y-4">
-                <div className="pb-3 border-b border-borderCls">
-                  <h3 className="text-xs font-bold uppercase text-white">Manual Question Registration Console</h3>
-                </div>
-                <form onSubmit={handleManualAddQuestion} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-gray-400 uppercase">Subject</label>
-                      <select 
-                        value={manualSubject} 
-                        onChange={(e) => setManualSubject(e.target.value)} 
-                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
-                      >
-                        <option value="Biology">Biology</option>
-                        <option value="Physics">Physics</option>
-                        <option value="Chemistry">Chemistry</option>
-                      </select>
+              {generationSubTab === 'rag' && (
+                <>
+                  {/* Manual/AI Question generation config */}
+                  <div className="bg-panel border border-borderCls rounded-xl p-6 space-y-4">
+                    <div className="pb-3 border-b border-borderCls">
+                      <h3 className="text-xs font-bold uppercase text-white">AI Question Generation Pipeline</h3>
                     </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-gray-400 uppercase">Bloom's Taxonomy</label>
-                      <select 
-                        value={manualBloom} 
-                        onChange={(e) => setManualBloom(e.target.value)} 
-                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
-                      >
-                        <option value="L1 Remember">L1 Remember</option>
-                        <option value="L2 Understand">L2 Understand</option>
-                        <option value="L3 Apply">L3 Apply</option>
-                        <option value="L4 Analyse">L4 Analyse</option>
-                        <option value="L5 Evaluate">L5 Evaluate</option>
-                      </select>
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-gray-400 uppercase">Correct Answer Option</label>
-                      <select 
-                        value={manualCorrect} 
-                        onChange={(e) => setManualCorrect(e.target.value)} 
-                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
-                      >
-                        <option value="A">Option A</option>
-                        <option value="B">Option B</option>
-                        <option value="C">Option C</option>
-                        <option value="D">Option D</option>
-                      </select>
-                    </div>
-                  </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-mono text-gray-400 uppercase">Question Text</label>
-                    <textarea 
-                      value={manualQuestion} 
-                      onChange={(e) => setManualQuestion(e.target.value)} 
-                      placeholder="Type question content here..." 
-                      className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white min-h-[60px]"
-                      required
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-gray-400 uppercase">Option A</label>
-                      <input 
-                        type="text" 
-                        value={manualOptionA} 
-                        onChange={(e) => setManualOptionA(e.target.value)} 
-                        placeholder="Option A description" 
-                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-gray-400 uppercase">Option B</label>
-                      <input 
-                        type="text" 
-                        value={manualOptionB} 
-                        onChange={(e) => setManualOptionB(e.target.value)} 
-                        placeholder="Option B description" 
-                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-gray-400 uppercase">Option C</label>
-                      <input 
-                        type="text" 
-                        value={manualOptionC} 
-                        onChange={(e) => setManualOptionC(e.target.value)} 
-                        placeholder="Option C description" 
-                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-mono text-gray-400 uppercase">Option D</label>
-                      <input 
-                        type="text" 
-                        value={manualOptionD} 
-                        onChange={(e) => setManualOptionD(e.target.value)} 
-                        placeholder="Option D description" 
-                        className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
-                        required
-                      />
-                    </div>
-                  </div>
-
-                  <button 
-                    type="submit"
-                    className="w-full py-2.5 bg-blue hover:bg-blue/90 text-white rounded text-xs font-semibold uppercase tracking-wider"
-                  >
-                    Register & Encrypt Question
-                  </button>
-                </form>
-              </div>
-
-              {/* Staged uploads panel */}
-              <div className="bg-panel border border-borderCls rounded-xl p-6 space-y-4">
-                <div className="pb-3 border-b border-borderCls flex justify-between items-center">
-                  <h3 className="text-xs font-bold uppercase text-white flex items-center gap-2">
-                    <Upload className="w-4 h-4 text-blue" />
-                    OCR Question Paper Upload Staging
-                  </h3>
-                  <button className="px-3 py-1 bg-blue/10 border border-blue/30 text-blue rounded text-[10px] uppercase font-semibold">
-                    Upload New Document (.pdf / .docx)
-                  </button>
-                </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-gray-300">
-                    <thead>
-                      <tr className="border-b border-borderCls/60 text-gray-500 font-mono text-[10px]">
-                        <th className="pb-2">FILENAME</th>
-                        <th className="pb-2">EXTRACTED</th>
-                        <th className="pb-2">QUALITY CONFIDENCE</th>
-                        <th className="pb-2">STATUS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {stagedPapers.map(p => (
-                        <tr key={p.id} className="border-b border-borderCls/30">
-                          <td className="py-2.5 text-white font-medium">{p.filename}</td>
-                          <td className="py-2.5 font-mono">{p.extracted} questions</td>
-                          <td className="py-2.5 text-green font-mono">{p.quality}%</td>
-                          <td className="py-2.5">
-                            <span className="bg-amber/15 border border-amber/30 text-amber text-[9px] font-mono px-2 py-0.5 rounded uppercase">{p.status}</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Staging review list */}
-                <div className="space-y-3 pt-3 border-t border-borderCls/50">
-                  <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest block">EXTRACTED ITEMS REVIEW</span>
-                  {stagedQuestions.map(sq => (
-                    <div key={sq.id} className="bg-bg border border-borderCls rounded-lg p-4 space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs font-mono text-blue font-bold">Staged Question #{sq.q_number}</span>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[9px] px-2 py-0.5 rounded font-mono ${sq.confidence >= 0.9 ? 'bg-green/10 text-green border border-green/30' : 'bg-amber/10 text-amber border border-amber/30'}`}>
-                            Conf: {Math.round(sq.confidence * 100)}%
-                          </span>
-                          <button onClick={() => handleReviewQ(sq.id, 'APPROVED')} className="px-2.5 py-1 bg-green hover:bg-green/90 text-black rounded text-[10px] font-bold uppercase">Approve</button>
-                          <button onClick={() => handleReviewQ(sq.id, 'SKIPPED')} className="px-2.5 py-1 bg-red/10 border border-red/30 text-red rounded text-[10px] font-bold uppercase">Discard</button>
-                        </div>
+                    <div className="grid grid-cols-4 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-mono text-gray-400 uppercase">Subject</label>
+                        <select value={genSubject} onChange={(e) => setGenSubject(e.target.value)} className="w-full bg-bg border border-borderCls rounded p-2 text-xs text-white">
+                          <option value="Biology">Biology</option>
+                          <option value="Physics">Physics</option>
+                          <option value="Chemistry">Chemistry</option>
+                        </select>
                       </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-mono text-gray-400 uppercase">Difficulty</label>
+                        <select value={genDifficulty} onChange={(e) => setGenDifficulty(e.target.value)} className="w-full bg-bg border border-borderCls rounded p-2 text-xs text-white">
+                          <option value="Easy">Easy</option>
+                          <option value="Medium">Medium</option>
+                          <option value="Hard">Hard</option>
+                          <option value="Very Hard">Very Hard</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-mono text-gray-400 uppercase">Format</label>
+                        <select value={genType} onChange={(e) => setGenType(e.target.value)} className="w-full bg-bg border border-borderCls rounded p-2 text-xs text-white">
+                          <option value="MCQ_single">MCQ Single Correct</option>
+                          <option value="MCQ_multiple">MCQ Multi Correct</option>
+                          <option value="Numerical">Numerical/Integer</option>
+                        </select>
+                      </div>
+                      <div className="flex items-end">
+                        <button 
+                          onClick={triggerGen}
+                          disabled={isGenerating}
+                          className="w-full py-2 bg-blue hover:bg-blue/90 disabled:bg-blue/40 text-white rounded text-xs font-semibold uppercase tracking-wider flex items-center justify-center gap-1.5"
+                        >
+                          {isGenerating ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                          {isGenerating ? 'Drafting...' : 'Run Pipeline'}
+                        </button>
+                      </div>
+                    </div>
 
-                      <p className="text-xs text-white leading-relaxed font-medium">{sq.text}</p>
-                      
-                      <div className="grid grid-cols-2 gap-2 pl-4">
-                        {Object.entries(sq.options).map(([k, v]) => (
-                          <div key={k} className={`p-2 rounded text-[10px] font-mono border ${sq.correct === k ? 'border-green bg-green/5 text-green' : 'border-borderCls/30 text-gray-400'}`}>
-                            {k}. {v}
+                    {/* Staging Pipeline steps display */}
+                    {isGenerating && (
+                      <div className="grid grid-cols-5 gap-2 pt-3 border-t border-borderCls/30">
+                        {["Drafting", "Similarity Scan", "Validator Review", "Bloom Classifier", "AES Encrypt"].map((s, idx) => (
+                          <div key={idx} className="bg-bg border border-borderCls p-2 rounded text-center animate-pulse">
+                            <span className="text-[8px] font-mono text-gray-400 block uppercase">Step {idx + 1}</span>
+                            <span className="text-[10px] text-blue font-semibold mt-0.5 block">{s}</span>
                           </div>
                         ))}
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    )}
+                  </div>
 
-              </div>
+                  {/* Manual Question Registration Console */}
+                  <div className="bg-panel border border-borderCls rounded-xl p-6 space-y-4">
+                    <div className="pb-3 border-b border-borderCls">
+                      <h3 className="text-xs font-bold uppercase text-white">Manual Question Registration Console</h3>
+                    </div>
+                    <form onSubmit={handleManualAddQuestion} className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-gray-400 uppercase">Subject</label>
+                          <select 
+                            value={manualSubject} 
+                            onChange={(e) => setManualSubject(e.target.value)} 
+                            className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                          >
+                            <option value="Biology">Biology</option>
+                            <option value="Physics">Physics</option>
+                            <option value="Chemistry">Chemistry</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-gray-400 uppercase">Bloom's Taxonomy</label>
+                          <select 
+                            value={manualBloom} 
+                            onChange={(e) => setManualBloom(e.target.value)} 
+                            className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                          >
+                            <option value="L1 Remember">L1 Remember</option>
+                            <option value="L2 Understand">L2 Understand</option>
+                            <option value="L3 Apply">L3 Apply</option>
+                            <option value="L4 Analyse">L4 Analyse</option>
+                            <option value="L5 Evaluate">L5 Evaluate</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-gray-400 uppercase">Correct Answer Option</label>
+                          <select 
+                            value={manualCorrect} 
+                            onChange={(e) => setManualCorrect(e.target.value)} 
+                            className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                          >
+                            <option value="A">Option A</option>
+                            <option value="B">Option B</option>
+                            <option value="C">Option C</option>
+                            <option value="D">Option D</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono text-gray-400 uppercase">Question Text</label>
+                        <textarea 
+                          value={manualQuestion} 
+                          onChange={(e) => setManualQuestion(e.target.value)} 
+                          placeholder="Type question content here..." 
+                          className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white min-h-[60px]"
+                          required
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-gray-400 uppercase">Option A</label>
+                          <input 
+                            type="text" 
+                            value={manualOptionA} 
+                            onChange={(e) => setManualOptionA(e.target.value)} 
+                            placeholder="Option A description" 
+                            className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-gray-400 uppercase">Option B</label>
+                          <input 
+                            type="text" 
+                            value={manualOptionB} 
+                            onChange={(e) => setManualOptionB(e.target.value)} 
+                            placeholder="Option B description" 
+                            className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-gray-400 uppercase">Option C</label>
+                          <input 
+                            type="text" 
+                            value={manualOptionC} 
+                            onChange={(e) => setManualOptionC(e.target.value)} 
+                            placeholder="Option C description" 
+                            className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono text-gray-400 uppercase">Option D</label>
+                          <input 
+                            type="text" 
+                            value={manualOptionD} 
+                            onChange={(e) => setManualOptionD(e.target.value)} 
+                            placeholder="Option D description" 
+                            className="w-full bg-bg border border-borderCls rounded p-2.5 text-xs text-white"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <button 
+                        type="submit"
+                        className="w-full py-2.5 bg-blue hover:bg-blue/90 text-white rounded text-xs font-semibold uppercase tracking-wider"
+                      >
+                        Register & Encrypt Question
+                      </button>
+                    </form>
+                  </div>
+                </>
+              )}
+
+              {generationSubTab === 'ocr' && (
+                <div className="bg-panel border border-borderCls rounded-xl p-6 space-y-4">
+                  <div className="pb-3 border-b border-borderCls flex justify-between items-center">
+                    <h3 className="text-xs font-bold uppercase text-white flex items-center gap-2">
+                      <Upload className="w-4 h-4 text-blue" />
+                      OCR Question Paper Upload Staging
+                    </h3>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs text-gray-300">
+                      <thead>
+                        <tr className="border-b border-borderCls/60 text-gray-500 font-mono text-[10px]">
+                          <th className="pb-2">FILENAME</th>
+                          <th className="pb-2">EXTRACTED</th>
+                          <th className="pb-2">QUALITY CONFIDENCE</th>
+                          <th className="pb-2">STATUS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stagedPapers.map(p => (
+                          <tr key={p.id} className="border-b border-borderCls/30">
+                            <td className="py-2.5 text-white font-medium">{p.filename}</td>
+                            <td className="py-2.5 font-mono">{p.extracted} questions</td>
+                            <td className="py-2.5 text-green font-mono">{p.quality}%</td>
+                            <td className="py-2.5">
+                              <span className="bg-amber/15 border border-amber/30 text-amber text-[9px] font-mono px-2 py-0.5 rounded uppercase">{p.status}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Staging review list */}
+                  <div className="space-y-3 pt-3 border-t border-borderCls/50">
+                    <span className="text-[10px] font-mono text-gray-400 uppercase tracking-widest block">EXTRACTED ITEMS REVIEW</span>
+                    {stagedQuestions.map(sq => (
+                      <div key={sq.id} className="bg-bg border border-borderCls rounded-lg p-4 space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-mono text-blue font-bold">Staged Question #{sq.q_number}</span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[9px] px-2 py-0.5 rounded font-mono ${sq.confidence >= 0.9 ? 'bg-green/10 text-green border border-green/30' : 'bg-amber/10 text-amber border border-amber/30'}`}>
+                              Conf: {Math.round(sq.confidence * 100)}%
+                            </span>
+                            <button type="button" onClick={() => handleReviewQ(sq.id, 'APPROVED')} className="px-2.5 py-1 bg-green hover:bg-green/90 text-black rounded text-[10px] font-bold uppercase">Approve</button>
+                            <button type="button" onClick={() => handleReviewQ(sq.id, 'SKIPPED')} className="px-2.5 py-1 bg-red/10 border border-red/30 text-red rounded text-[10px] font-bold uppercase">Discard</button>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-white leading-relaxed font-medium">{sq.text}</p>
+                        
+                        <div className="grid grid-cols-2 gap-2 pl-4">
+                          {Object.entries(sq.options).map(([k, v]) => (
+                            <div key={k} className={`p-2 rounded text-[10px] font-mono border ${sq.correct === k ? 'border-green bg-green/5 text-green' : 'border-borderCls/30 text-gray-400'}`}>
+                              {k}. {v}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {generationSubTab === 'pdf-sealed' && (
+                <div className="bg-panel border border-[#162030] rounded-2xl p-6 space-y-6">
+                  <div className="pb-3 border-b border-[#162030] flex items-center justify-between">
+                    <h3 className="text-xs font-bold uppercase text-white flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#ffcc44] inline-block animate-pulse" />
+                      Direct PDF Sealed Paper Configuration
+                    </h3>
+                  </div>
+
+                  <form onSubmit={handlePdfPaperUpload} className="space-y-4">
+                    {/* Drag-drop zone */}
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setPdfDragging(true); }}
+                      onDragLeave={() => setPdfDragging(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setPdfDragging(false);
+                        const dropped = e.dataTransfer.files[0];
+                        if (dropped && dropped.name.toLowerCase().endsWith('.pdf')) {
+                          setPdfPaperFile(dropped);
+                        } else {
+                          alert('Only PDF files are accepted here.');
+                        }
+                      }}
+                      className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all relative ${
+                        pdfDragging ? 'border-[#ffcc44] bg-[#ffcc44]/5' : 'border-[#162030] hover:border-[#ffcc44]/50 bg-[#05080d]/50'
+                      }`}
+                    >
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        onChange={(e) => setPdfPaperFile(e.target.files ? e.target.files[0] : null)}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                      {pdfPaperFile ? (
+                        <>
+                          <span className="text-3xl mb-2">📄</span>
+                          <span className="text-xs text-[#ffcc44] font-bold">{pdfPaperFile.name}</span>
+                          <span className="text-[10px] text-gray-400 mt-1">{(pdfPaperFile.size / 1024).toFixed(1)} KB — Click or drag to replace</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-3xl mb-2">📥</span>
+                          <span className="text-xs text-white font-medium">Drag & Drop complete exam PDF here</span>
+                          <span className="text-[9px] text-gray-400 mt-1">Or click to browse — PDF files only</span>
+                          <span className="text-[9px] text-[#ffcc44]/75 mt-1">This will be sealed as the final question paper</span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Metadata fields */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1 col-span-2">
+                        <label className="text-xs font-mono text-gray-400 uppercase">Paper Name *</label>
+                        <input
+                          type="text"
+                          value={pdfPaperName}
+                          onChange={(e) => setPdfPaperName(e.target.value)}
+                          placeholder="e.g. NEET UG 2026 — Morning Set A"
+                          className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-xs text-white outline-none focus:border-[#ffcc44]"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-mono text-gray-400 uppercase">Exam Name *</label>
+                        <input
+                          type="text"
+                          value={pdfExamName}
+                          onChange={(e) => setPdfExamName(e.target.value)}
+                          placeholder="NEET UG 2026"
+                          className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-xs text-white outline-none focus:border-[#ffcc44]"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-mono text-gray-400 uppercase">Exam Date *</label>
+                        <input
+                          type="date"
+                          value={pdfExamDate}
+                          onChange={(e) => setPdfExamDate(e.target.value)}
+                          className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-xs text-white outline-none focus:border-[#ffcc44]"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-mono text-gray-400 uppercase">Shift</label>
+                        <select value={pdfShift} onChange={(e) => setPdfShift(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-xs text-white outline-none">
+                          <option>Morning</option>
+                          <option>Afternoon</option>
+                          <option>Evening</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-mono text-gray-400 uppercase">Set Code</label>
+                        <select value={pdfSetCode} onChange={(e) => setPdfSetCode(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-xs text-white outline-none">
+                          <option>A</option>
+                          <option>B</option>
+                          <option>C</option>
+                          <option>D</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-mono text-gray-400 uppercase">Duration (min)</label>
+                        <input
+                          type="number"
+                          value={pdfDuration}
+                          onChange={(e) => setPdfDuration(Number(e.target.value))}
+                          className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-xs text-white outline-none"
+                          min={30} max={360}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-mono text-gray-400 uppercase">Security Level</label>
+                        <select value={pdfSecurityLevel} onChange={(e) => setPdfSecurityLevel(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-xs text-white outline-none">
+                          <option>LOW</option>
+                          <option>MEDIUM</option>
+                          <option>HIGH</option>
+                          <option>CRITICAL</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {pdfUploadResult && (
+                      <div className="rounded-xl bg-[#00f0a0]/10 border border-[#00f0a0]/30 p-5 space-y-3">
+                        <p className="text-xs font-bold text-[#00f0a0] uppercase">✅ Paper Sealed Successfully</p>
+                        <div className="text-[11px] text-gray-300 font-mono space-y-1">
+                          <div>Paper ID: #{pdfUploadResult.paper_id}</div>
+                          <div>Exam ID: #{pdfUploadResult.exam_id}</div>
+                          <div>Set Code: {pdfUploadResult.set_code}</div>
+                          <div>Size: {(pdfUploadResult.file_size_bytes / 1024).toFixed(1)} KB</div>
+                          <div className="break-all">SHA-256 Checksum: {pdfUploadResult.paper_hash}</div>
+                        </div>
+                        <div className="pt-2 flex flex-col gap-2">
+                          <a
+                            href={`http://localhost:8001/api/papers/${pdfUploadResult.paper_id}/download-bundle?key=OMNISHIELD-KEY-2026-NEET`}
+                            download
+                            className="py-2.5 bg-[#ffcc44] hover:bg-[#ffcc44]/90 text-black font-bold text-xs uppercase tracking-wider rounded-xl text-center transition-all shadow-md"
+                          >
+                            📥 Download Sealed Encrypted Bundle
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => { setPdfUploadResult(null); setPdfPaperFile(null); setPdfPaperName(''); }}
+                            className="text-[10px] text-[#ffcc44] hover:text-[#ffcc44]/90 underline self-start"
+                          >
+                            Upload another paper
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {!pdfUploadResult && (
+                      <button
+                        type="submit"
+                        disabled={pdfUploading || !pdfPaperFile}
+                        className="w-full py-3.5 bg-gradient-to-r from-[#ffcc44] to-orange-500 hover:from-[#ffcc44]/90 hover:to-orange-500/90 disabled:opacity-50 disabled:cursor-not-allowed text-black font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+                      >
+                        {pdfUploading ? (
+                          <><span className="w-3.5 h-3.5 border-2 border-black border-t-transparent rounded-full animate-spin" /> Uploading & Sealing...</>
+                        ) : (
+                          <>🔐 Upload & Seal PDF Paper</>
+                        )}
+                      </button>
+                    )}
+                  </form>
+                </div>
+              )}
 
             </div>
+          )}      </div>
           )}
 
           {/* TAB 4: QUESTION PAPER BUILDER */}

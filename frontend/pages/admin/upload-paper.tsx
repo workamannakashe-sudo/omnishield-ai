@@ -30,10 +30,24 @@ export default function UploadPaper() {
   const [purpose, setPurpose] = useState('Import to Bank');
 
   // Input modes
-  const [activeTab, setActiveTab] = useState<'upload' | 'paste' | 'gdoc'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'paste' | 'gdoc' | 'pdf-sealed'>('upload');
   const [pasteText, setPasteText] = useState('');
   const [gdocUrl, setGdocUrl] = useState('');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+
+  // PDF Paper Direct Upload States
+  const [pdfPaperFile, setPdfPaperFile] = useState<File | null>(null);
+  const [pdfPaperName, setPdfPaperName] = useState('');
+  const [pdfExamName, setPdfExamName] = useState('NEET UG 2026');
+  const [pdfExamDate, setPdfExamDate] = useState(new Date().toISOString().slice(0, 10));
+  const [pdfShift, setPdfShift] = useState('Morning');
+  const [pdfSetCode, setPdfSetCode] = useState('A');
+  const [pdfExamTypeId, setPdfExamTypeId] = useState(1);
+  const [pdfDuration, setPdfDuration] = useState(180);
+  const [pdfSecurityLevel, setPdfSecurityLevel] = useState('HIGH');
+  const [pdfUploading, setPdfUploading] = useState(false);
+  const [pdfUploadResult, setPdfUploadResult] = useState<any>(null);
+  const [pdfDragging, setPdfDragging] = useState(false);
 
   // Extraction Progress State
   const [progressLog, setProgressLog] = useState<any[]>([]);
@@ -167,6 +181,43 @@ export default function UploadPaper() {
         console.error(err);
       }
     };
+  };
+
+  const handlePdfPaperUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pdfPaperFile) { alert('Please select a PDF file.'); return; }
+    if (!pdfPaperName.trim()) { alert('Please enter a paper name.'); return; }
+    if (!pdfExamName.trim()) { alert('Please enter an exam name.'); return; }
+    if (!pdfExamDate.trim()) { alert('Please enter the exam date.'); return; }
+
+    setPdfUploading(true);
+    setPdfUploadResult(null);
+
+    const formData = new FormData();
+    formData.append('paper_name', pdfPaperName);
+    formData.append('exam_name', pdfExamName);
+    formData.append('exam_date', pdfExamDate);
+    formData.append('shift', pdfShift);
+    formData.append('set_code', pdfSetCode);
+    formData.append('exam_type_id', String(pdfExamTypeId));
+    formData.append('duration', String(pdfDuration));
+    formData.append('security_level', pdfSecurityLevel);
+    formData.append('file', pdfPaperFile);
+
+    try {
+      const res = await fetch('http://localhost:8001/api/papers/upload-pdf', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Upload failed');
+      setPdfUploadResult(data);
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    } finally {
+      setPdfUploading(false);
+    }
   };
 
   // 3. File Submission Flow
@@ -417,143 +468,309 @@ export default function UploadPaper() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
             {/* Left Upload Card */}
-            <div className="lg:col-span-2 bg-[#080d14] border border-[#162030] rounded-2xl p-6 space-y-6">
+            <div className={`${activeTab === 'pdf-sealed' ? 'lg:col-span-3' : 'lg:col-span-2'} bg-[#080d14] border border-[#162030] rounded-2xl p-6 space-y-6`}>
               <div className="pb-3 border-b border-[#162030] flex gap-4">
                 <button onClick={() => setActiveTab('upload')} className={`pb-2 text-xs font-bold uppercase tracking-wider ${activeTab === 'upload' ? 'border-b-2 border-[#ffcc44] text-white' : 'text-gray-400'}`}>Upload Document</button>
                 <button onClick={() => setActiveTab('paste')} className={`pb-2 text-xs font-bold uppercase tracking-wider ${activeTab === 'paste' ? 'border-b-2 border-[#ffcc44] text-white' : 'text-gray-400'}`}>Paste Text</button>
                 <button onClick={() => setActiveTab('gdoc')} className={`pb-2 text-xs font-bold uppercase tracking-wider ${activeTab === 'gdoc' ? 'border-b-2 border-[#ffcc44] text-white' : 'text-gray-400'}`}>Google Doc Link</button>
+                <button onClick={() => setActiveTab('pdf-sealed')} className={`pb-2 text-xs font-bold uppercase tracking-wider ${activeTab === 'pdf-sealed' ? 'border-b-2 border-[#ffcc44] text-white' : 'text-gray-400'}`}>📄 Direct PDF Sealed Paper</button>
               </div>
 
-              <form onSubmit={handleUploadSubmit} className="space-y-6">
-                
-                {activeTab === 'upload' && (
-                  <div className="border-2 border-dashed border-[#162030] hover:border-[#ffcc44]/50 rounded-2xl p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all relative">
-                    <input 
-                      type="file" 
-                      onChange={e => setUploadedFile(e.target.files ? e.target.files[0] : null)}
-                      className="absolute inset-0 opacity-0 cursor-pointer" 
-                      accept=".pdf,.docx,.xlsx,.csv,.txt,.jpg,.png,.zip"
+              {activeTab !== 'pdf-sealed' ? (
+                <form onSubmit={handleUploadSubmit} className="space-y-6">
+                  
+                  {activeTab === 'upload' && (
+                    <div className="border-2 border-dashed border-[#162030] hover:border-[#ffcc44]/50 rounded-2xl p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all relative">
+                      <input 
+                        type="file" 
+                        onChange={e => setUploadedFile(e.target.files ? e.target.files[0] : null)}
+                        className="absolute inset-0 opacity-0 cursor-pointer" 
+                        accept=".pdf,.docx,.xlsx,.csv,.txt,.jpg,.png,.zip"
+                      />
+                      <Upload className="w-12 h-12 text-[#ffcc44] mb-3" />
+                      <span className="text-xs text-white font-medium">
+                        {uploadedFile ? `Selected: ${uploadedFile.name}` : "Drag & Drop question paper file here"}
+                      </span>
+                      <span className="text-[10px] text-gray-500 mt-1">Accepts PDF, DOCX, XLSX, CSV, PNG, JPG, ZIP up to 50MB</span>
+                    </div>
+                  )}
+
+                  {activeTab === 'paste' && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-gray-400 uppercase">Paste Raw Question Sheet Content</label>
+                      <textarea 
+                        value={pasteText}
+                        onChange={e => setPasteText(e.target.value)}
+                        placeholder="e.g. 1. What molecular subunit configuration is present...? (A) Option A (B) Option B..." 
+                        className="w-full h-48 bg-[#05080d] border border-[#162030] rounded-xl p-3 text-xs text-white outline-none focus:border-[#ffcc44]"
+                      />
+                    </div>
+                  )}
+
+                  {activeTab === 'gdoc' && (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-mono text-gray-400 uppercase">Google Docs Published-To-Web URL</label>
+                      <input 
+                        type="url" 
+                        value={gdocUrl}
+                        onChange={e => setGdocUrl(e.target.value)}
+                        placeholder="https://docs.google.com/document/d/..." 
+                        className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-xs text-white outline-none focus:border-[#ffcc44]"
+                      />
+                    </div>
+                  )}
+
+                  {/* Metadata details row */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase">Marking Rule: Correct Answer</label>
+                      <input type="number" value={correctMarks} onChange={e => setCorrectMarks(Number(e.target.value))} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2.5 text-xs text-white" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase">Marking Rule: Negative</label>
+                      <input type="number" value={wrongMarks} onChange={e => setWrongMarks(Number(e.target.value))} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2.5 text-xs text-white" />
+                    </div>
+                  </div>
+
+                  <button 
+                    type="submit"
+                    className="w-full py-3 bg-[#ffcc44] hover:bg-[#ffcc44]/90 text-black font-bold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Bot className="w-4 h-4" /> Start AI Extraction Pipeline
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handlePdfPaperUpload} className="space-y-4">
+                  {/* Drop zone */}
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setPdfDragging(true); }}
+                    onDragLeave={() => setPdfDragging(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setPdfDragging(false);
+                      const dropped = e.dataTransfer.files?.[0];
+                      if (dropped && dropped.name.toLowerCase().endsWith('.pdf')) {
+                        setPdfPaperFile(dropped);
+                      } else {
+                        alert('Only PDF files are accepted here.');
+                      }
+                    }}
+                    className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center text-center cursor-pointer transition-all relative ${
+                      pdfDragging ? 'border-[#ffcc44] bg-[#ffcc44]/5' : 'border-[#162030] hover:border-[#ffcc44]/50 bg-[#05080d]/50'
+                    }`}
+                  >
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      onChange={(e) => setPdfPaperFile(e.target.files ? e.target.files[0] : null)}
+                      className="absolute inset-0 opacity-0 cursor-pointer"
                     />
-                    <Upload className="w-12 h-12 text-[#ffcc44] mb-3" />
-                    <span className="text-xs text-white font-medium">
-                      {uploadedFile ? `Selected: ${uploadedFile.name}` : "Drag & Drop question paper file here"}
-                    </span>
-                    <span className="text-[10px] text-gray-500 mt-1">Accepts PDF, DOCX, XLSX, CSV, PNG, JPG, ZIP up to 50MB</span>
+                    {pdfPaperFile ? (
+                      <>
+                        <FileText className="w-12 h-12 text-[#ffcc44] mb-3" />
+                        <span className="text-xs text-[#ffcc44] font-bold">{pdfPaperFile.name}</span>
+                        <span className="text-[10px] text-gray-500 mt-1">{(pdfPaperFile.size / 1024).toFixed(1)} KB — Click or drag to replace</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-12 h-12 text-gray-500 mb-3" />
+                        <span className="text-xs text-white font-medium">Drag & Drop complete exam PDF here</span>
+                        <span className="text-[10px] text-gray-500 mt-1">Or click to browse — PDF files only</span>
+                        <span className="text-[10px] text-[#ffcc44]/75 mt-1 font-semibold">This will be sealed directly as the final exam paper</span>
+                      </>
+                    )}
                   </div>
-                )}
 
-                {activeTab === 'paste' && (
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-gray-400 uppercase">Paste Raw Question Sheet Content</label>
-                    <textarea 
-                      value={pasteText}
-                      onChange={e => setPasteText(e.target.value)}
-                      placeholder="e.g. 1. What molecular subunit configuration is present...? (A) Option A (B) Option B..." 
-                      className="w-full h-48 bg-[#05080d] border border-[#162030] rounded-xl p-3 text-xs text-white outline-none focus:border-[#ffcc44]"
-                    />
+                  {/* Metadata fields */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase block">Paper Name *</label>
+                      <input
+                        type="text"
+                        value={pdfPaperName}
+                        onChange={(e) => setPdfPaperName(e.target.value)}
+                        placeholder="e.g. NEET UG 2026 — Morning Set A"
+                        className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2.5 text-white outline-none"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase block">Exam Name *</label>
+                      <input
+                        type="text"
+                        value={pdfExamName}
+                        onChange={(e) => setPdfExamName(e.target.value)}
+                        placeholder="NEET UG 2026"
+                        className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2.5 text-white outline-none"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase block">Exam Date *</label>
+                      <input
+                        type="date"
+                        value={pdfExamDate}
+                        onChange={(e) => setPdfExamDate(e.target.value)}
+                        className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2.5 text-white outline-none"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase block">Shift</label>
+                      <select value={pdfShift} onChange={(e) => setPdfShift(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2.5 text-white outline-none">
+                        <option>Morning</option>
+                        <option>Afternoon</option>
+                        <option>Evening</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase block">Set Code</label>
+                      <select value={pdfSetCode} onChange={(e) => setPdfSetCode(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2.5 text-white outline-none">
+                        <option>A</option>
+                        <option>B</option>
+                        <option>C</option>
+                        <option>D</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase block">Duration (min)</label>
+                      <input
+                        type="number"
+                        value={pdfDuration}
+                        onChange={(e) => setPdfDuration(Number(e.target.value))}
+                        className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2.5 text-white outline-none"
+                        min={30} max={360}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase block">Security Level</label>
+                      <select value={pdfSecurityLevel} onChange={(e) => setPdfSecurityLevel(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2.5 text-white outline-none">
+                        <option>LOW</option>
+                        <option>MEDIUM</option>
+                        <option>HIGH</option>
+                        <option>CRITICAL</option>
+                      </select>
+                    </div>
                   </div>
-                )}
 
-                {activeTab === 'gdoc' && (
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-mono text-gray-400 uppercase">Google Docs Published-To-Web URL</label>
-                    <input 
-                      type="url" 
-                      value={gdocUrl}
-                      onChange={e => setGdocUrl(e.target.value)}
-                      placeholder="https://docs.google.com/document/d/..." 
-                      className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-xs text-white outline-none focus:border-[#ffcc44]"
-                    />
-                  </div>
-                )}
+                  {/* Result banner with Download Sealed Encrypted Bundle button */}
+                  {pdfUploadResult && (
+                    <div className="rounded-2xl bg-green-500/10 border border-green-500/30 p-5 space-y-3">
+                      <p className="text-xs font-bold text-green-400 uppercase flex items-center gap-1.5">
+                        <CheckCircle className="w-4 h-4" /> Paper Sealed Successfully
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-gray-400">
+                        <div>Paper ID: <span className="text-white">#{pdfUploadResult.paper_id}</span></div>
+                        <div>Exam ID: <span className="text-white">#{pdfUploadResult.exam_id}</span></div>
+                        <div>Set Code: <span className="text-white">{pdfUploadResult.set_code}</span></div>
+                        <div>Size: <span className="text-white">{(pdfUploadResult.file_size_bytes / 1024).toFixed(1)} KB</span></div>
+                      </div>
+                      <p className="text-[10px] text-gray-500 font-mono break-all bg-[#05080d] p-2 border border-[#162030] rounded-lg font-semibold">SHA-256: {pdfUploadResult.paper_hash}</p>
+                      
+                      <div className="pt-2 flex flex-col gap-2">
+                        <a
+                          href={`http://localhost:8001/api/papers/${pdfUploadResult.paper_id}/download-bundle?key=OMNISHIELD-KEY-2026-NEET`}
+                          download
+                          className="w-full py-3 bg-[#ffcc44] hover:bg-[#ffcc44]/90 text-black font-bold rounded-xl text-xs uppercase tracking-widest text-center transition-all shadow-md block"
+                        >
+                          📥 Download Sealed Encrypted Bundle
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => { setPdfUploadResult(null); setPdfPaperFile(null); setPdfPaperName(''); }}
+                          className="text-[10px] text-[#ffcc44] hover:text-[#ffcc44]/90 underline self-start"
+                        >
+                          Upload another paper
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
-                {/* Metadata details row */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-gray-400 uppercase">Marking Rule: Correct Answer</label>
-                    <input type="number" value={correctMarks} onChange={e => setCorrectMarks(Number(e.target.value))} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2.5 text-xs text-white" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-gray-400 uppercase">Marking Rule: Negative</label>
-                    <input type="number" value={wrongMarks} onChange={e => setWrongMarks(Number(e.target.value))} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2.5 text-xs text-white" />
-                  </div>
-                </div>
-
-                <button 
-                  type="submit"
-                  className="w-full py-3 bg-[#ffcc44] hover:bg-[#ffcc44]/90 text-black font-bold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5"
-                >
-                  <Bot className="w-4 h-4" /> Start AI Extraction Pipeline
-                </button>
-              </form>
+                  {!pdfUploadResult && (
+                    <button
+                      type="submit"
+                      disabled={pdfUploading || !pdfPaperFile}
+                      className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-2"
+                    >
+                      {pdfUploading ? (
+                        <><RefreshCw className="w-4 h-4 animate-spin" /> Uploading & Sealing...</>
+                      ) : (
+                        <>🔐 Upload & Seal PDF Paper</>
+                      )}
+                    </button>
+                  )}
+                </form>
+              )}
             </div>
 
             {/* Right Form Card */}
-            <div className="bg-[#080d14] border border-[#162030] rounded-2xl p-6 space-y-4">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider pb-2 border-b border-[#162030]">Exam Target Settings</h3>
-              
-              <div className="space-y-3 text-xs">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-mono text-gray-400 uppercase block">Exam Target Name</label>
-                  <input type="text" value={examName} onChange={e => setExamName(e.target.value)} placeholder="e.g. NEET UG 2026 Shift A" className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white outline-none" required />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[9px] font-mono text-gray-400 uppercase block">Exam Category Template</label>
-                  <select value={examTypeId} onChange={e => setExamTypeId(Number(e.target.value))} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white outline-none">
-                    {examTypes.map(t => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
+            {activeTab !== 'pdf-sealed' && (
+              <div className="bg-[#080d14] border border-[#162030] rounded-2xl p-6 space-y-4">
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider pb-2 border-b border-[#162030]">Exam Target Settings</h3>
+                
+                <div className="space-y-3 text-xs">
                   <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-gray-400 uppercase block">Year</label>
-                    <input type="number" value={year} onChange={e => setYear(Number(e.target.value))} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white" />
+                    <label className="text-[9px] font-mono text-gray-400 uppercase block">Exam Target Name</label>
+                    <input type="text" value={examName} onChange={e => setExamName(e.target.value)} placeholder="e.g. NEET UG 2026 Shift A" className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white outline-none" required />
                   </div>
+
                   <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-gray-400 uppercase block">Shift</label>
-                    <select value={shift} onChange={e => setShift(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white">
-                      <option>Morning</option>
-                      <option>Afternoon</option>
-                      <option>Evening</option>
-                      <option>NA</option>
+                    <label className="text-[9px] font-mono text-gray-400 uppercase block">Exam Category Template</label>
+                    <select value={examTypeId} onChange={e => setExamTypeId(Number(e.target.value))} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white outline-none">
+                      {examTypes.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
                     </select>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase block">Year</label>
+                      <input type="number" value={year} onChange={e => setYear(Number(e.target.value))} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase block">Shift</label>
+                      <select value={shift} onChange={e => setShift(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white">
+                        <option>Morning</option>
+                        <option>Afternoon</option>
+                        <option>Evening</option>
+                        <option>NA</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase block">Main Subject</label>
+                      <select value={subject} onChange={e => setSubject(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white">
+                        <option>Biology</option>
+                        <option>Physics</option>
+                        <option>Chemistry</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono text-gray-400 uppercase block">Language</label>
+                      <select value={language} onChange={e => setLanguage(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white">
+                        <option>English</option>
+                        <option>Hindi</option>
+                        <option>Bilingual</option>
+                      </select>
+                    </div>
+                  </div>
+
                   <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-gray-400 uppercase block">Main Subject</label>
-                    <select value={subject} onChange={e => setSubject(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white">
-                      <option>Biology</option>
-                      <option>Physics</option>
-                      <option>Chemistry</option>
+                    <label className="text-[9px] font-mono text-gray-400 uppercase block">Source classification</label>
+                    <select value={sourceType} onChange={e => setSourceType(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white">
+                      <option>Previous Year</option>
+                      <option>Mock Exam</option>
+                      <option>Coaching Bank</option>
+                      <option>University</option>
+                      <option>Other</option>
                     </select>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-gray-400 uppercase block">Language</label>
-                    <select value={language} onChange={e => setLanguage(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white">
-                      <option>English</option>
-                      <option>Hindi</option>
-                      <option>Bilingual</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[9px] font-mono text-gray-400 uppercase block">Source classification</label>
-                  <select value={sourceType} onChange={e => setSourceType(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-lg p-2 text-white">
-                    <option>Previous Year</option>
-                    <option>Mock Exam</option>
-                    <option>Coaching Bank</option>
-                    <option>University</option>
-                    <option>Other</option>
-                  </select>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 

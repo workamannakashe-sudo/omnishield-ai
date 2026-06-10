@@ -62,6 +62,7 @@ def simulate_threat_signal(threat_in: ThreatSimulate, db: Session = Depends(get_
         )
         db.add(audit)
         db.commit()
+        db.refresh(threat)
         
         # Publish event
         publish_event("omnishield:threats", "LEAK_ALERT", event_data)

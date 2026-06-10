@@ -166,6 +166,51 @@ export default function App() {
     });
   }, []);
 
+  // Fetch real-time backend question statistics on load and mount
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch('http://localhost:8001/api/questions/stats');
+        if (res.ok) {
+          const data = await res.json();
+          const approved = data.counters.approved || 4872;
+          setTotalQuestionsSynced(approved);
+
+          // Update subject coverage percentages
+          if (data.subject_split) {
+            const total = approved || 1;
+            const mappedSubjects = [
+              { name: 'Biology', value: Math.round(((data.subject_split.Biology || 0) / total) * 100) },
+              { name: 'Chemistry', value: Math.round(((data.subject_split.Chemistry || 0) / total) * 100) },
+              { name: 'Physics', value: Math.round(((data.subject_split.Physics || 0) / total) * 100) }
+            ];
+            setSubjectDataSynced(mappedSubjects);
+          }
+
+          // Update Bloom's taxonomy distribution percentages
+          if (data.bloom_distribution) {
+            const total = approved || 1;
+            const mappedBloom = [
+              { name: 'L1 Remember', value: Math.round(((data.bloom_distribution['L1 Remember'] || 0) / total) * 100) },
+              { name: 'L2 Understand', value: Math.round(((data.bloom_distribution['L2 Understand'] || 0) / total) * 100) },
+              { name: 'L3 Apply', value: Math.round(((data.bloom_distribution['L3 Apply'] || 0) / total) * 100) },
+              { name: 'L4 Analyse', value: Math.round(((data.bloom_distribution['L4 Analyse'] || 0) / total) * 100) },
+              { name: 'L5/L6 Evaluate+', value: Math.round((((data.bloom_distribution['L5 Evaluate'] || 0) + (data.bloom_distribution['L6 Create'] || 0)) / total) * 100) }
+            ];
+            setDifficultyDataSynced(mappedBloom);
+          }
+        }
+      } catch (err) {
+        console.warn('Backend offline: using default seed stats.', err);
+      }
+    };
+    fetchStats();
+    
+    // Poll stats every 10 seconds for real-time updates
+    const interval = setInterval(fetchStats, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Listen to Firebase State updates
   useEffect(() => {
     const unsubscribe = subscribeDbState('omnishield_state', (data) => {

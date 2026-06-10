@@ -167,19 +167,32 @@ def seal_paper(id: int, operator_name: str, db: Session = Depends(get_session)):
         "encrypted_blob_sample": encrypted_blob[:30] + "..."
     }
 
-@router.get("/{id}/preview")
-def preview_paper(id: int, db: Session = Depends(get_session)):
+from fastapi.responses import HTMLResponse
+from app.routers.auth import RoleChecker, get_current_user
+from app.database import User
+
+@router.get("/{id}/preview", response_class=HTMLResponse)
+def preview_paper(
+    id: int, 
+    db: Session = Depends(get_session),
+    current_user: User = Depends(RoleChecker(["SuperAdmin", "ExamBoard", "Center"]))
+):
     paper = db.get(QuestionPaper, id)
     if not paper:
         raise HTTPException(status_code=404, detail="Paper not found")
         
     # Enforce preview audit log
-    event_data = {"paper_id": id, "ip_address": "127.0.0.1"}
+    event_data = {
+        "paper_id": id, 
+        "user_id": current_user.id, 
+        "username": current_user.username,
+        "ip_address": "127.0.0.1"
+    }
     audit = AuditLedger(
         exam_id=paper.exam_id,
         event_type="PAPER_PREVIEW_VIEWED",
-        actor_id="admin",
-        actor_role="ExamBoard Admin",
+        actor_id=current_user.username,
+        actor_role=current_user.role,
         payload_json=json.dumps(event_data),
         event_hash=calculate_sha256(json.dumps(event_data).encode('utf-8'))
     )
@@ -191,19 +204,138 @@ def preview_paper(id: int, db: Session = Depends(get_session)):
     ).where(PaperQuestionLink.paper_id == id).order_by(PaperQuestionLink.order_index)
     results = db.exec(stmt).all()
     
-    questions = []
+    questions_html = ""
     for q, idx, sec in results:
-        questions.append({
-            "number": idx,
-            "section": sec,
-            "text": json.loads(q.text_json),
-            "options": json.loads(q.options_json),
-            "bloom": q.bloom_level,
-            "difficulty": q.difficulty
-        })
+        q_text = json.loads(q.text_json).get("en", "")
+        q_opts = json.loads(q.options_json).get("en", {})
         
-    return {
-        "paper_name": paper.name,
-        "status": paper.status,
-        "questions": questions
-    }
+        options_html = ""
+        for opt_key, opt_val in q_opts.items():
+            options_html += f"<li><strong>({opt_key})</strong> {opt_val}</li>"
+            
+        questions_html += f"""
+        <div class="question-block">
+            <div class="question-header">Q{idx}. [{sec}] - Bloom: {q.bloom_level} | Difficulty: {q.difficulty}</div>
+            <p class="question-text">{q_text}</p>
+            <ul class="options-list">
+                {options_html}
+            </ul>
+        </div>
+        """
+        
+    # Build complete HTML document
+    center_label = f"CENTER CODE: {current_user.center_id or 'NTA-CONTROL'}"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>OmniShield - Secure Paper Preview</title>
+        <style>
+            body {{
+                font-family: 'Outfit', -apple-system, sans-serif;
+                background-color: #ffffff;
+                color: #000000;
+                margin: 0;
+                padding: 40px;
+                user-select: none !important;
+                -webkit-user-select: none !important;
+                -moz-user-select: none !important;
+                -ms-user-select: none !important;
+                position: relative;
+            }}
+            .watermark-overlay {{
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                pointer-events: none;
+                z-index: 9999;
+                opacity: 0.12;
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: space-around;
+                align-content: space-around;
+                overflow: hidden;
+            }}
+            .watermark-text {{
+                font-size: 28px;
+                color: rgba(255, 0, 0, 0.4);
+                transform: rotate(-35deg);
+                font-weight: bold;
+                white-space: nowrap;
+                margin: 60px;
+            }}
+            .header {{
+                text-align: center;
+                border-bottom: 2px solid #000000;
+                padding-bottom: 15px;
+                margin-bottom: 30px;
+            }}
+            .header h1 {{
+                margin: 0;
+                font-size: 20px;
+                letter-spacing: 1.5px;
+            }}
+            .header p {{
+                margin: 5px 0 0 0;
+                font-size: 11px;
+                color: #555555;
+                font-family: monospace;
+            }}
+            .question-block {{
+                margin-bottom: 25px;
+                page-break-inside: avoid;
+            }}
+            .question-header {{
+                font-size: 11px;
+                font-family: monospace;
+                color: #666666;
+                margin-bottom: 4px;
+            }}
+            .question-text {{
+                font-size: 14px;
+                font-weight: bold;
+                margin: 0 0 10px 0;
+            }}
+            .options-list {{
+                list-style-type: none;
+                padding-left: 20px;
+                margin: 0;
+            }}
+            .options-list li {{
+                font-size: 13px;
+                margin-bottom: 6px;
+            }}
+            @media print {{
+                body {{ display: none !important; }}
+                body::after {{
+                    content: "CONFIDENTIAL PAPER PREVIEW — PRINTING NOT PERMITTED";
+                    display: block;
+                    font-size: 30px;
+                    color: red;
+                    text-align: center;
+                    margin-top: 100px;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="watermark-overlay">
+            {" ".join([f'<div class="watermark-text">{center_label} • PREVIEW ONLY • {timestamp}</div>' for _ in range(30)])}
+        </div>
+        <div class="header">
+            <h1>NATIONAL TESTING AGENCY (NTA)</h1>
+            <p>CONFIDENTIAL EXAM BOOKLET — PREVIEW MODE</p>
+            <p>{center_label} | {timestamp}</p>
+        </div>
+        <div class="content">
+            {questions_html}
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+

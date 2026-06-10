@@ -1,17 +1,19 @@
 import os
 import json
 import asyncio
-from typing import List
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+import time
+from typing import List, Optional
+from datetime import datetime
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 
-from app.database import init_db, get_session, ExamType, Exam, Question, ExamCenter, Threat, AuditLedger, SystemConfig
+from app.database import init_db, get_session, ExamType, Exam, Question, ExamCenter, Threat, AuditLedger, SystemConfig, User, Candidate
 from app.redis_client import redis_client, redis_active, publish_event
 from app.security_utils import calculate_sha256
 
-# Import routers (to be created next)
-from app.routers import exams, questions, papers, centers, threats, proctor, forensics
+# Import routers
+from app.routers import exams, questions, papers, centers, threats, proctor, forensics, auth, watermark
 
 app = FastAPI(title="OmniShield AI - Exam Security API", version="2.0.0")
 
@@ -24,14 +26,67 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 1. Rate Limiting Middleware
+@app.middleware("http")
+async def rate_limiting_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/auth") or "/download" in path:
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        key = f"ratelimit:{client_ip}:{path}"
+        try:
+            current = redis_client.get(key)
+            if current and int(current) >= 60:  # Limit to 60 requests per minute
+                return Response(
+                    content=json.dumps({"detail": "Rate limit exceeded. Too many requests."}),
+                    status_code=429,
+                    media_type="application/json"
+                )
+            
+            if not current:
+                redis_client.set(key, 1, ex=60)
+            else:
+                redis_client.incrby(key, 1)
+        except Exception:
+            pass  # Fallback gracefully if Redis is unresponsive
+            
+    return await call_next(request)
+
+# 2. CSRF Protection Middleware
+@app.middleware("http")
+async def csrf_protection_middleware(request: Request, call_next):
+    if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
+        path = request.url.path
+        # Exclude webhooks, websockets, and public auth endpoints
+        if not path.startswith("/api/watermark") and not path.startswith("/ws") and not path.startswith("/api/auth"):
+            origin = request.headers.get("origin")
+            referer = request.headers.get("referer")
+            host = request.headers.get("host")
+            
+            # Restrict requests to originating from the same host, or requiring API Auth Token / CSRF header
+            has_csrf = request.headers.get("x-csrf-token") is not None
+            has_auth = request.headers.get("authorization") is not None
+            
+            if not (has_csrf or has_auth or (origin and host in origin) or (referer and host in referer)):
+                return Response(
+                    content=json.dumps({"detail": "CSRF validation failed: missing custom authorization/CSRF header or invalid origin."}),
+                    status_code=403,
+                    media_type="application/json"
+                )
+    return await call_next(request)
+
+
 # Include Routers
+app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(exams.router, prefix="/api/exams", tags=["Exams"])
+app.include_router(exams.router, prefix="/api/exam", tags=["Exams"])
 app.include_router(questions.router, prefix="/api/questions", tags=["Questions"])
 app.include_router(papers.router, prefix="/api/papers", tags=["Papers"])
 app.include_router(centers.router, prefix="/api/centers", tags=["Centers"])
 app.include_router(threats.router, prefix="/api/threats", tags=["Threats"])
 app.include_router(proctor.router, prefix="/api/proctor", tags=["Proctoring"])
 app.include_router(forensics.router, prefix="/api/forensics", tags=["Forensics & Audit"])
+app.include_router(watermark.router, prefix="/api/watermark", tags=["Watermarking"])
+
 
 # WebSocket Connection Manager
 class ConnectionManager:
@@ -53,20 +108,14 @@ class ConnectionManager:
             try:
                 await connection.send_text(message)
             except Exception:
-                # Connection might be closed already
                 pass
 
 manager = ConnectionManager()
 
 # Background Redis pub/sub listener
 async def redis_listener():
-    """
-    Subscribes to all omnishield channels and broadcasts incoming payloads
-    to all active WebSockets.
-    """
     if not redis_active:
-        # If Redis is down, we run a simulator task to stream logs periodically
-        print("Redis is down. Launching offline simulation broadcast thread.")
+        print("Redis is down. Launching simulation log thread.")
         logs_pool = [
             ("SYSTEM_LOG", {"type": "info", "message": "Database replication health check: OK."}),
             ("SERVER_HEARTBEAT", {"id": 1, "city": "Mumbai", "status": "ONLINE"}),
@@ -76,20 +125,17 @@ async def redis_listener():
         while True:
             await asyncio.sleep(6.0)
             if manager.active_connections:
-                event_type, payload = asyncio.get_event_loop().run_in_executor(None, lambda: logs_pool[asyncio.get_event_loop().time() % len(logs_pool)])
-                event_type, payload = logs_pool[int(asyncio.get_event_loop().time()) % len(logs_pool)]
+                event_type, payload = logs_pool[int(time.time()) % len(logs_pool)]
                 msg = json.dumps({"event": event_type, "data": payload})
                 await manager.broadcast(msg)
         return
 
-    # Real Redis pub/sub subscription
     pubsub = redis_client.pubsub()
     pubsub.psubscribe("omnishield:*")
     print("Subscribed to omnishield:* channels.")
     
     while True:
         try:
-            # Non-blocking get message
             message = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.1)
             if message:
                 payload = message.get("data")
@@ -105,29 +151,19 @@ async def redis_listener():
 async def websocket_events(websocket: WebSocket):
     await manager.connect(websocket)
     try:
-        # Keep connection open and listen for incoming messages (e.g. chat, commands)
         while True:
             data = await websocket.receive_text()
-            # Handle incoming client socket messages if needed
             print(f"Received WS message: {data}")
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
 @app.on_event("startup")
 async def startup_event():
-    # Initialize DB
     init_db()
-    
-    # Seed default data
     seed_database()
-    
-    # Spawn Redis listener task
     asyncio.create_task(redis_listener())
 
 def seed_database():
-    """
-    Seed initial exam types, admins, and configs if empty.
-    """
     db_session = next(get_session())
     
     # Check if seeded
@@ -176,19 +212,108 @@ def seed_database():
     db_session.add(active_exam)
     db_session.commit()
     
-    # 4. Seed centers
-    centers_list = [
-        ExamCenter(name="Delhi Technical Institute", city="Delhi", state="Delhi", student_count=250, operator_id="operator_delhi", status="LOCKED"),
-        ExamCenter(name="Mumbai Academy of Science", city="Mumbai", state="Maharashtra", student_count=180, operator_id="operator_mumbai", status="LOCKED"),
-        ExamCenter(name="Bangalore Central School", city="Bangalore", state="Karnataka", student_count=300, operator_id="operator_bangalore", status="LOCKED"),
-        ExamCenter(name="Kolkata Engineering College", city="Kolkata", state="West Bengal", student_count=150, operator_id="operator_kolkata", status="LOCKED"),
-        ExamCenter(name="Jaipur High School", city="Jaipur", state="Rajasthan", student_count=120, operator_id="operator_jaipur", status="LOCKED"),
+    # 4. Seed users & centers
+    # 5 demo logins: SuperAdmin, ExamBoard, Center, Invigilator, Candidate
+    # We will generate hash dynamically using bcrypt
+    admin_pw = bcrypt_hash("admin123")
+    board_pw = bcrypt_hash("board123")
+    center_pw = bcrypt_hash("center123")
+    invig_pw = bcrypt_hash("invig123")
+    cand_pw = bcrypt_hash("candidate123")
+
+    users_list = [
+        User(username="superadmin", password_hash=admin_pw, role="SuperAdmin"),
+        User(username="board_admin", password_hash=board_pw, role="ExamBoard"),
+        User(username="invigilator1", password_hash=invig_pw, role="Invigilator"),
+        User(username="ROLL#2024001", password_hash=cand_pw, role="Candidate"),
     ]
-    for center in centers_list:
-        db_session.add(center)
+    for u in users_list:
+        db_session.add(u)
     db_session.commit()
+
+    # Bulk insert 5000 centers
+    print("Bulk seeding 5000 centers...")
+    centers_to_add = []
+    # Seed specific named ones first
+    named_centers = [
+        ("Delhi Technical Institute", "Delhi", "Delhi", "operator_delhi"),
+        ("Mumbai Academy of Science", "Mumbai", "Maharashtra", "operator_mumbai"),
+        ("Bangalore Central School", "Bangalore", "Karnataka", "operator_bangalore"),
+        ("Kolkata Engineering College", "Kolkata", "West Bengal", "operator_kolkata"),
+        ("Jaipur High School", "Jaipur", "Rajasthan", "operator_jaipur"),
+    ]
     
-    # 5. Seed some threats
+    # Add operator accounts for named ones
+    for i, (name, city, state, op_id) in enumerate(named_centers):
+        op_user = User(username=op_id, password_hash=center_pw, role="Center", center_id=i+1)
+        db_session.add(op_user)
+        c = ExamCenter(name=name, city=city, state=state, student_count=100 + (i * 50), operator_id=op_id, status="LOCKED")
+        db_session.add(c)
+    db_session.commit()
+
+    # Fill rest up to 5000 centers
+    for i in range(len(named_centers) + 1, 5001):
+        c_name = f"Exam Center #{i}"
+        city = f"City {i % 100}"
+        state = f"State {i % 28}"
+        op_id = f"operator_{i}"
+        
+        c = ExamCenter(name=c_name, city=city, state=state, student_count=150, operator_id=op_id, status="LOCKED")
+        centers_to_add.append(c)
+        
+        # Batch insert in chunks of 1000
+        if len(centers_to_add) >= 1000:
+            db_session.bulk_save_objects(centers_to_add)
+            db_session.commit()
+            centers_to_add = []
+            
+    if centers_to_add:
+        db_session.bulk_save_objects(centers_to_add)
+        db_session.commit()
+
+    # 5. Seed 4872 questions
+    print("Bulk seeding 4872 questions...")
+    q1_text = json.dumps({"en": "Analyze the ribosomal subunit configuration during eukaryotic translation initiation phase."})
+    q1_options = json.dumps({"en": {"A": "40S and 60S subunit scanning", "B": "30S and 50S prokaryotic binding", "C": "80S direct initiation bypass", "D": "70S mono-cistronic translation"}})
+    q1_hash = calculate_sha256(q1_text.encode('utf-8'))
+    
+    questions_to_add = []
+    subjects = ["Biology", "Physics", "Chemistry"]
+    difficulties = ["Easy", "Medium", "Hard", "Very Hard"]
+    blooms = ["L1 Remember", "L2 Understand", "L3 Apply", "L4 Analyse", "L5 Evaluate"]
+    
+    for i in range(1, 4873):
+        subj = subjects[i % len(subjects)]
+        diff = difficulties[i % len(difficulties)]
+        bl = blooms[i % len(blooms)]
+        text = f"Synthetic question #{i}: Assess {subj} concepts using Cognitive Load {bl} at difficulty {diff}."
+        
+        q = Question(
+            exam_type_id=neet_type.id,
+            text_json=json.dumps({"en": text}),
+            options_json=json.dumps({"en": {"A": "Option Alpha", "B": "Option Beta", "C": "Option Gamma", "D": "Option Delta"}}),
+            answer="A",
+            subject=subj,
+            chapter=f"Chapter {i % 10}",
+            topic=f"Topic {i % 20}",
+            bloom_level=bl,
+            difficulty=diff,
+            question_type="MCQ_single",
+            audit_hash=calculate_sha256(text.encode('utf-8')),
+            status="APPROVED"
+        )
+        questions_to_add.append(q)
+        
+        if len(questions_to_add) >= 1000:
+            db_session.bulk_save_objects(questions_to_add)
+            db_session.commit()
+            questions_to_add = []
+            
+    if questions_to_add:
+        db_session.bulk_save_objects(questions_to_add)
+        db_session.commit()
+
+    # 6. Seed some threats
     threats_list = [
         Threat(exam_id=active_exam.id, source="Telegram @leak_channel_2026", snippet="NEET biology answer sheet leaked...", similarity_score=14.2, verdict="FAKE"),
         Threat(exam_id=active_exam.id, source="Dark Web Forum", snippet="NEET 2026 Physics complete question paper download link...", similarity_score=44.1, verdict="ANALYSING"),
@@ -198,20 +323,27 @@ def seed_database():
         db_session.add(t)
     db_session.commit()
     
-    # 6. Seed questions
-    q1_text = json.dumps({"en": "Analyze the ribosomal subunit configuration during eukaryotic translation initiation phase."})
-    q1_options = json.dumps({"en": {"A": "40S and 60S subunit scanning", "B": "30S and 50S prokaryotic binding", "C": "80S direct initiation bypass", "D": "70S mono-cistronic translation"}})
-    q1_hash = calculate_sha256(q1_text.encode('utf-8'))
-    
-    q2_text = json.dumps({"en": "Calculate the magnetic flux density at the center of a circular current carrying loop of radius R."})
-    q2_options = json.dumps({"en": {"A": "μ0 I / (2R)", "B": "μ0 I / (4πR)", "C": "μ0 I R^2", "D": "Zero"}})
-    q2_hash = calculate_sha256(q2_text.encode('utf-8'))
-    
-    questions_list = [
-        Question(exam_type_id=neet_type.id, text_json=q1_text, options_json=q1_options, answer="A", subject="Biology", chapter="Genetics", topic="Translation", bloom_level="L4 Analyse", difficulty="Hard", question_type="MCQ_single", audit_hash=q1_hash, status="APPROVED"),
-        Question(exam_type_id=neet_type.id, text_json=q2_text, options_json=q2_options, answer="A", subject="Physics", chapter="Electromagnetism", topic="Magnetic Fields", bloom_level="L3 Apply", difficulty="Medium", question_type="MCQ_single", audit_hash=q2_hash, status="APPROVED"),
-    ]
-    for q in questions_list:
-        db_session.add(q)
+    # 7. Seed candidate count (We'll mock query counters to return 2.4M registered)
+    # But we also add 5000 candidates for local center lookups
+    print("Bulk seeding 5000 candidate records...")
+    candidates_to_add = []
+    for i in range(1, 5001):
+        cand = Candidate(
+            roll_number=f"ROLL#2026{i:04d}",
+            name=f"Candidate {i}",
+            exam_id=active_exam.id,
+            center_id=(i % 5) + 1,  # Distributed over our 5 named centers
+            category="GEN" if i % 10 != 0 else "PwD",
+            status="REGISTERED",
+            special_needs_json=json.dumps({"extra_time_minutes": 30, "scribe_assigned": True, "room_number": f"Room {i%20 + 1}"}) if i % 10 == 0 else "{}"
+        )
+        candidates_to_add.append(cand)
+    db_session.bulk_save_objects(candidates_to_add)
     db_session.commit()
+    
     print("Database seeding completed successfully.")
+
+def bcrypt_hash(password: str) -> str:
+    import bcrypt
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')

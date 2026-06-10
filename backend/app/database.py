@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from sqlmodel import SQLModel, Field, create_engine, Session, select, Relationship
+from sqlalchemy import event
 
 # Database connection URL. Default to PostgreSQL, fallback to SQLite for local development ease.
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/omnishield")
@@ -15,6 +16,15 @@ else:
     engine = create_engine(DATABASE_URL, pool_size=10, max_overflow=20)
 
 # Models Definition
+class User(SQLModel, table=True):
+    __tablename__ = "users"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(index=True, unique=True)
+    password_hash: str
+    role: str  # SuperAdmin, ExamBoard, Center, Invigilator, Candidate
+    center_id: Optional[int] = Field(default=None, foreign_key="exam_centers.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 class ExamType(SQLModel, table=True):
     __tablename__ = "exam_types"
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -34,12 +44,12 @@ class Exam(SQLModel, table=True):
     security_level: str = Field(default="HIGH")  # LOW, MEDIUM, HIGH, CRITICAL
     config_json: str = Field(default="{}")  # Custom rules, languages, section rules
     created_by: str = Field(default="admin")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 class Question(SQLModel, table=True):
     __tablename__ = "questions"
     id: Optional[int] = Field(default=None, primary_key=True)
-    exam_type_id: int = Field(foreign_key="exam_types.id")
+    exam_type_id: int = Field(foreign_key="exam_types.id", index=True)
     text_json: str  # JSON map of languages: {"en": "Text", "hi": "Text"}
     options_json: str  # JSON map of options: {"en": {"A": "", "B": ""}, "hi": {"A": "", "B": ""}}
     answer: str  # Correct answer symbol (e.g. "B" or "A,C" or "15")
@@ -52,13 +62,13 @@ class Question(SQLModel, table=True):
     source: str = Field(default="Synthetic")  # Synthetic / Human-authored / OCR-extracted
     audit_hash: str
     status: str = Field(default="PENDING")  # PENDING, APPROVED, DISCARDED, FLAGGED
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 class QuestionPaper(SQLModel, table=True):
     __tablename__ = "question_papers"
     __table_args__ = {"extend_existing": True}
     id: Optional[int] = Field(default=None, primary_key=True)
-    exam_id: int = Field(foreign_key="exams.id")
+    exam_id: int = Field(foreign_key="exams.id", index=True)
     name: str
     status: str = Field(default="DRAFT")  # DRAFT, SEALED
     sealed_at: Optional[datetime] = Field(default=None)
@@ -79,8 +89,8 @@ class Candidate(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     roll_number: str = Field(index=True, unique=True)
     name: str
-    exam_id: int = Field(foreign_key="exams.id")
-    center_id: Optional[int] = Field(default=None, foreign_key="exam_centers.id")
+    exam_id: int = Field(foreign_key="exams.id", index=True)
+    center_id: Optional[int] = Field(default=None, foreign_key="exam_centers.id", index=True)
     category: str = Field(default="GEN")  # GEN, OBC, SC, ST, EWS, PwD
     photo_url: Optional[str] = Field(default=None)
     q_order_seed: int = Field(default=42)  # Deterministic seed for question shuffling
@@ -105,41 +115,41 @@ class ExamCenter(SQLModel, table=True):
 class Threat(SQLModel, table=True):
     __tablename__ = "threats"
     id: Optional[int] = Field(default=None, primary_key=True)
-    exam_id: int = Field(foreign_key="exams.id")
+    exam_id: int = Field(foreign_key="exams.id", index=True)
     source: str = Field(index=True)  # Telegram / Twitter / Dark web / Manual
     snippet: str
     similarity_score: float = Field(default=0.0)
     verdict: str = Field(default="ANALYSING")  # ANALYSING, FAKE, CRITICAL, DIVERTED
     resolved_by: Optional[str] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 class AuditLedger(SQLModel, table=True):
     __tablename__ = "audit_ledger"
     id: Optional[int] = Field(default=None, primary_key=True)
-    exam_id: Optional[int] = Field(default=None)
+    exam_id: Optional[int] = Field(default=None, index=True)
     event_type: str = Field(index=True)  # QUESTION_APPROVED, PAPER_SEALED, etc.
     actor_id: str
     actor_role: str
     payload_json: str = Field(default="{}")
     event_hash: str
     ip_address: str = Field(default="127.0.0.1")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 class ProctorAlert(SQLModel, table=True):
     __tablename__ = "proctor_alerts"
     id: Optional[int] = Field(default=None, primary_key=True)
-    exam_id: int = Field(foreign_key="exams.id")
-    candidate_id: int = Field(foreign_key="candidates.id")
+    exam_id: int = Field(foreign_key="exams.id", index=True)
+    candidate_id: int = Field(foreign_key="candidates.id", index=True)
     alert_type: str = Field(index=True)  # NO_FACE, MULTIPLE_FACES, TAB_SWITCH, LOOKING_AWAY
     severity: str = Field(default="LOW")  # LOW, MEDIUM, HIGH, CRITICAL
     snapshot_url: Optional[str] = Field(default=None)
     resolved: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 class ExamSchedule(SQLModel, table=True):
     __tablename__ = "exam_schedule"
     id: Optional[int] = Field(default=None, primary_key=True)
-    exam_id: int = Field(foreign_key="exams.id", unique=True)
+    exam_id: int = Field(foreign_key="exams.id", unique=True, index=True)
     exam_date: str
     unlock_time: str
     distribution_start: str
@@ -156,13 +166,13 @@ class SystemConfig(SQLModel, table=True):
 class IncidentReport(SQLModel, table=True):
     __tablename__ = "incident_reports"
     id: Optional[int] = Field(default=None, primary_key=True)
-    center_id: int = Field(foreign_key="exam_centers.id")
-    exam_id: int = Field(foreign_key="exams.id")
+    center_id: int = Field(foreign_key="exam_centers.id", index=True)
+    exam_id: int = Field(foreign_key="exams.id", index=True)
     reported_by: str
     description: str
     severity: str = Field(default="MEDIUM")  # LOW, MEDIUM, HIGH, CRITICAL
     status: str = Field(default="NEW")  # NEW, RESOLVED
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 # Upload Paper System tables
 class UploadedPaper(SQLModel, table=True):
@@ -171,7 +181,7 @@ class UploadedPaper(SQLModel, table=True):
     original_filename: str
     file_url: str
     file_type: str  # pdf, docx, csv, txt, zip, doc_link
-    exam_type_id: int = Field(foreign_key="exam_types.id")
+    exam_type_id: int = Field(foreign_key="exam_types.id", index=True)
     year: int
     shift: str
     source_type: str  # PYP, Mock, Coaching, University, Custom
@@ -185,12 +195,12 @@ class UploadedPaper(SQLModel, table=True):
     total_skipped: int = Field(default=0)
     quality_score: int = Field(default=100)
     uploaded_by: str = Field(default="admin")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 class ExtractedQuestionStaging(SQLModel, table=True):
     __tablename__ = "extracted_questions_staging"
     id: Optional[int] = Field(default=None, primary_key=True)
-    paper_id: int = Field(foreign_key="uploaded_papers.id")
+    paper_id: int = Field(foreign_key="uploaded_papers.id", index=True)
     q_number: int
     q_type: str  # MCQ_single, etc.
     text_json: str
@@ -204,7 +214,7 @@ class ExtractedQuestionStaging(SQLModel, table=True):
     review_status: str = Field(default="UNREVIEWED")  # UNREVIEWED, APPROVED, SKIPPED, EDITED
     reviewed_by: Optional[str] = Field(default=None)
     final_question_id: Optional[int] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 class QuestionDraft(SQLModel, table=True):
     __tablename__ = "question_drafts"
@@ -215,16 +225,26 @@ class QuestionDraft(SQLModel, table=True):
     options_json: str
     correct_answer: str
     metadata_json: str = Field(default="{}")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 class AnswerKey(SQLModel, table=True):
     __tablename__ = "answer_keys"
     id: Optional[int] = Field(default=None, primary_key=True)
-    paper_id: int = Field(foreign_key="uploaded_papers.id")
+    paper_id: int = Field(foreign_key="uploaded_papers.id", index=True)
     file_url: str
     answers_json: str  # {"1": "A", "2": "C"}
     uploaded_by: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+# SQLAlchemy Listeners to Enforce Append-Only for AuditLedger
+@event.listens_for(AuditLedger, 'before_update')
+def receive_before_update(mapper, connection, target):
+    raise PermissionError("Updates are strictly prohibited on append-only audit_ledger table.")
+
+@event.listens_for(AuditLedger, 'before_delete')
+def receive_before_delete(mapper, connection, target):
+    raise PermissionError("Deletions are strictly prohibited on append-only audit_ledger table.")
 
 
 def init_db():

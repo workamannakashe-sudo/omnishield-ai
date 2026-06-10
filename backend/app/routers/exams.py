@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from pydantic import BaseModel
 
-from app.database import get_session, Exam, ExamType, AuditLedger
+from app.database import get_session, Exam, ExamType, AuditLedger, ExamSchedule, User
 from app.redis_client import publish_event
 from app.security_utils import calculate_sha256
+from app.routers.auth import RoleChecker, get_current_user
 
 router = APIRouter()
 
@@ -27,7 +28,11 @@ class ExamCreate(BaseModel):
     config_json: dict  # attempt rules, proctoring, sections, languages
 
 @router.post("/create", response_model=Exam)
-def create_exam(exam_in: ExamCreate, db: Session = Depends(get_session)):
+def create_exam(
+    exam_in: ExamCreate, 
+    db: Session = Depends(get_session),
+    current_user: User = Depends(RoleChecker(["SuperAdmin", "ExamBoard"]))
+):
     # Verify exam type exists
     exam_type = db.get(ExamType, exam_in.exam_type_id)
     if not exam_type:
@@ -51,8 +56,8 @@ def create_exam(exam_in: ExamCreate, db: Session = Depends(get_session)):
     audit = AuditLedger(
         exam_id=exam.id,
         event_type="EXAM_CREATED",
-        actor_id="admin",
-        actor_role="SuperAdmin",
+        actor_id=current_user.username,
+        actor_role=current_user.role,
         payload_json=json.dumps(event_data),
         event_hash=calculate_sha256(json.dumps(event_data).encode('utf-8'))
     )
@@ -76,7 +81,12 @@ def get_exam_by_id(id: int, db: Session = Depends(get_session)):
     return exam
 
 @router.patch("/{id}/status")
-def update_exam_status(id: int, status: str, db: Session = Depends(get_session)):
+def update_exam_status(
+    id: int, 
+    status: str, 
+    db: Session = Depends(get_session),
+    current_user: User = Depends(RoleChecker(["SuperAdmin", "ExamBoard"]))
+):
     exam = db.get(Exam, id)
     if not exam:
         raise HTTPException(status_code=404, detail="Exam not found")
@@ -94,8 +104,8 @@ def update_exam_status(id: int, status: str, db: Session = Depends(get_session))
     audit = AuditLedger(
         exam_id=id,
         event_type="EXAM_STATUS_UPDATED",
-        actor_id="admin",
-        actor_role="SuperAdmin",
+        actor_id=current_user.username,
+        actor_role=current_user.role,
         payload_json=json.dumps(event_data),
         event_hash=calculate_sha256(json.dumps(event_data).encode('utf-8'))
     )
@@ -106,3 +116,44 @@ def update_exam_status(id: int, status: str, db: Session = Depends(get_session))
     publish_event("omnishield:centers", "EXAM_STATUS_CHANGE", event_data)
     
     return {"status": "SUCCESS", "new_status": exam.status}
+
+@router.patch("/{id}/step")
+def update_exam_step(
+    id: int, 
+    step: int, 
+    db: Session = Depends(get_session),
+    current_user: User = Depends(RoleChecker(["SuperAdmin", "ExamBoard"]))
+):
+    schedule = db.exec(select(ExamSchedule).where(ExamSchedule.exam_id == id)).first()
+    if not schedule:
+        # Create default schedule if none exists
+        schedule = ExamSchedule(
+            exam_id=id,
+            exam_date="2026-06-14",
+            unlock_time="10:00:00",
+            distribution_start="09:00:00",
+            current_step=step
+        )
+    else:
+        schedule.current_step = step
+        
+    db.add(schedule)
+    db.commit()
+    db.refresh(schedule)
+    
+    # Broadcast phase update via WS/Redis
+    steps = ["DISTRIBUTE", "LOCK", "BROADCAST_TOKEN", "UNLOCK", "WATERMARK", "GENERATE"]
+    step_label = steps[step - 1] if 1 <= step <= len(steps) else "UNKNOWN"
+    
+    event_data = {"exam_id": id, "current_step": step, "label": step_label}
+    publish_event(f"omnishield:exam:{id}", "EXAM_STEP_TRANSITION", event_data)
+    
+    # Update master exam status based on steps
+    if step_label == "GENERATE":
+        exam = db.get(Exam, id)
+        if exam:
+            exam.status = "LIVE"
+            db.add(exam)
+            db.commit()
+            
+    return {"status": "SUCCESS", "current_step": schedule.current_step, "label": step_label}

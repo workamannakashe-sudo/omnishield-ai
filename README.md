@@ -94,14 +94,14 @@ Action Agent         →    Assembly Agent          →    Append-Only Ledger
 ### Forensics & Audit
 *Forensic Roll Tracer backed by PostgreSQL append-only audit ledger. Every action — PAPER\_SEALED, EXAM\_CONFIG\_CREATED, CENTER\_KEY\_REGISTERED — logged with cryptographic hash, actor role, and timestamp. Tamper-proof by design.*
 
-![Forensics & Audit](<img width="1592" height="774" alt="om11" src="https://github.com/user-attachments/assets/30e27c45-0fa2-4088-987c-4543adf92105" />)
+<img width="1592" height="774" alt="om11" src="https://github.com/user-attachments/assets/30e27c45-0fa2-4088-987c-4543adf92105" />
 
 ---
 
 ###  AI Coordinator
 *Embedded Claude API assistant grounded with live exam context: active threat level, centre download metrics, and exam metadata. Ask it anything about the current exam operational state.*
 
-![AI Coordinator](<img width="1594" height="774" alt="om13" src="https://github.com/user-attachments/assets/78e3a7b0-17ae-4887-93cc-15972d7cb8be" />)
+<img width="1594" height="774" alt="om13" src="https://github.com/user-attachments/assets/78e3a7b0-17ae-4887-93cc-15972d7cb8be" />
 
 ---
 

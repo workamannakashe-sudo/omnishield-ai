@@ -51,42 +51,42 @@ Action Agent         →    Assembly Agent          →    Append-Only Ledger
 ### Command Center
 *Real-time overview: 4,872 questions banked, 5,000 edge servers online, active OSINT threat feed, live system log showing Scout Agent, Redis pub/sub, and PostgreSQL connections.*
 
-[Command Center](<img width="1591" height="773" alt="om1" src="https://github.com/user-attachments/assets/83f354da-b1f3-4290-93d3-41abe52de269" />  )
+<img width="1591" height="773" alt="om1" src="https://github.com/user-attachments/assets/83f354da-b1f3-4290-93d3-41abe52de269" />  
 
 ---
 
 ### Threat Intelligence — Scout Agent Feed
 *Live OSINT monitoring across Telegram, Dark Web mirrors, and Twitter with similarity scores and FAKE/ANALYSING verdicts. Dual-Authority Verification Protocol requires simultaneous NTA Director + Chairman sign-off to trigger backup paper (PAPER-B).*
 
-![Threat Intel](<img width="1595" height="777" alt="om5" src="https://github.com/user-attachments/assets/b52f12c9-bef3-4906-abfd-9fcab8d4c19e" />)
+ <img width="1595" height="777" alt="om5" src="https://github.com/user-attachments/assets/b52f12c9-bef3-4906-abfd-9fcab8d4c19e" />
 
 ---
 
 ### Exam Day State Machine
 *Six-phase autonomous pipeline: DISTRIBUTE → LOCK → BROADCAST\_TOKEN → UNLOCK → WATERMARK → GENERATE. Emergency operator controls available at every phase: Pause Exam, Extend Time (+15M), Full Abort.*
 
-![Exam Day Control](<img width="1588" height="766" alt="om6" src="https://github.com/user-attachments/assets/c4392684-08c7-4f57-9c0d-38a5b8cbf47a" />)
+ <img width="1588" height="766" alt="om6" src="https://github.com/user-attachments/assets/c4392684-08c7-4f57-9c0d-38a5b8cbf47a" />
 
 ---
 
 ### Paper Builder
 *Drag-and-drop question assembly from approved bank with Biology/Physics/Chemistry difficulty tags. One-click SEAL PAPER triggers AES cryptographic lock on the assembled paper set.*
 
-![Paper Builder](<img width="1593" height="771" alt="om3" src="https://github.com/user-attachments/assets/afe9dd8d-0976-4fbe-a385-c81158457e89" />)
+ <img width="1593" height="771" alt="om3" src="https://github.com/user-attachments/assets/afe9dd8d-0976-4fbe-a385-c81158457e89" />
 
 ---
 
 ### Candidate Control
 *Bulk CSV import, auto-centre allocation, DWT-SVD compliant admit card generation. 240,000 unique watermarks generated across 5,000 centres for a single exam cycle.*
 
-![Candidate Control](<img width="1592" height="774" alt="om4" src="https://github.com/user-attachments/assets/6d06dacd-6dc2-41e6-b42e-2b3d9ca0a5f0" />)
+ <img width="1592" height="774" alt="om4" src="https://github.com/user-attachments/assets/6d06dacd-6dc2-41e6-b42e-2b3d9ca0a5f0" />
 
 ---
 
 ### Live Proctoring Dashboard
 *WebRTC video feeds with MediaPipe landmark gaze detection. AI auto-proctor signals: CRITICAL (face not detected >30s), MEDIUM (tab swap detected). One-click broadcast message to all candidates.*
 
-![Live Proctoring](<img width="1592" height="776" alt="om8" src="https://github.com/user-attachments/assets/3bb89689-e5e3-48a1-939a-d8adf1a64385" />)
+ <img width="1592" height="776" alt="om8" src="https://github.com/user-attachments/assets/3bb89689-e5e3-48a1-939a-d8adf1a64385" />
 
 
 ---

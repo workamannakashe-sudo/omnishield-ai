@@ -1222,6 +1222,43 @@ export default function Phase1Tab({
             </div>
           </div>
         )}
+
+        {/* Approved Question Bank */}
+        <div className="panel mt-3">
+          <div className="panel-header">
+            <div className="panel-title">
+              <div className="dot" style={{ backgroundColor: 'var(--green)' }} />
+              Approved Question Bank Catalog
+            </div>
+            <div className="badge badge-green">SECURE LEDGER</div>
+          </div>
+          <div className="panel-body">
+            <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
+              {recentQuestions.map((q, idx) => (
+                <div key={q.id || idx} className="p-3 border border-border bg-bg3/60 rounded-lg space-y-2 hover:border-blue/50 transition-all text-left">
+                  <div className="flex justify-between items-center text-[9px] font-mono">
+                    <span className="text-blue font-semibold">{q.subject}</span>
+                    <span className="text-amber font-semibold">{q.bloom}</span>
+                    <span className="text-green font-semibold">Similarity: {q.similarity}</span>
+                  </div>
+                  <p className="text-xs text-white font-medium leading-relaxed">{q.text}</p>
+                  {q.options && (
+                    <div className="grid grid-cols-2 gap-2 pl-3 pt-1 border-t border-border/30">
+                      {q.options.map((opt, optIdx) => (
+                        <div key={optIdx} className={`text-[10px] py-1 px-1.5 border rounded ${opt.correct ? 'border-green/30 bg-green-dim text-green' : 'border-border/30 text-text2'}`}>
+                          {opt.text}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {recentQuestions.length === 0 && (
+                <div className="text-center text-text2 text-xs italic py-4">No questions approved in the memory bank yet.</div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Right Column: Statistics */}

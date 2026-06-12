@@ -51,7 +51,7 @@ Action Agent         →    Assembly Agent          →    Append-Only Ledger
 ### Command Center
 *Real-time overview: 4,872 questions banked, 5,000 edge servers online, active OSINT threat feed, live system log showing Scout Agent, Redis pub/sub, and PostgreSQL connections.*
 
-![Command Center](<img width="1591" height="773" alt="om1" src="https://github.com/user-attachments/assets/83f354da-b1f3-4290-93d3-41abe52de269" />)
+[Command Center](<img width="1591" height="773" alt="om1" src="https://github.com/user-attachments/assets/83f354da-b1f3-4290-93d3-41abe52de269" />  )
 
 ---
 

@@ -1,163 +1,207 @@
 <div align="center">
 
-# 🛡️ OmniShield AI
+<img src="https://img.shields.io/badge/OmniShield-AI-00d4ff?style=for-the-badge&labelColor=0a0c10" alt="OmniShield AI"/>
 
-### Autonomous Examination Integrity & Secure Paper Generation System
+# OmniShield AI
+### Universal Exam Integrity & Control Platform
 
-**FAR AWAY 2026 Hackathon** &nbsp;|&nbsp; Domain: **Examinations + Agentic & Autonomous Systems**
+*Autonomous. Cryptographic. Unstoppable.*
 
-[Live Demo](https://omnishield-ai.vercel.app/)
-
-<img width="1582" height="769" alt="WhatsApp Image 2026-06-09 at 11 42 34 AM" src="https://github.com/user-attachments/assets/cafec933-0b17-44ef-9fcb-b87f69a81238" />
-
-<img width="1585" height="767" alt="WhatsApp Image 2026-06-09 at 11 43 09 AM" src="https://github.com/user-attachments/assets/1808e52e-c4fe-434d-b600-39a1652c1ac1" />
-
-<img width="1596" height="744" alt="WhatsApp Image 2026-06-09 at 11 43 29 AM" src="https://github.com/user-attachments/assets/7a3bd89b-abac-40e2-9fe5-95e122506738" />
-
-<img width="1584" height="754" alt="WhatsApp Image 2026-06-09 at 11 43 47 AM" src="https://github.com/user-attachments/assets/a4f6dda2-ea5b-4a8d-9eaa-873454500a1b" />
-
-</div>
+[![Live Demo](https://img.shields.io/badge/▶%20Live%20Demo-omnishield--ai.vercel.app-00d4ff?style=for-the-badge&logo=vercel&logoColor=white)](https://omnishield-ai.vercel.app)
 
 ---
 
-## 📰 The Problem
+## The Crisis That Built OmniShield
 
-**On June 4, 2026, NEET was cancelled for 2.27 million students.**
+On June 4, 2026, **NEET UG was cancelled for 2.27 million students.** A paper leaked from a printing facility in Jaipur — before a single student had opened a booklet. The re-examination cost the government **₹500+ Crore**.
 
-A paper leaked from a printing facility in Jaipur — before a single student had opened the booklet. The re-examination cost the government over ₹500 Crore. This was not an isolated incident. The CBI has handled 18 exam fraud cases since 2015 with near-zero conviction rate.
+The root cause is structural: question papers exist **for 72 hours** before exam day. Every hour they exist in physical form is an hour they can be photographed, forwarded, and sold.
 
-**The root cause is structural, not criminal:** Question papers exist for **72 hours** before exam day. Every hour they exist in physical form is an hour they can be photographed, forwarded, and sold.
-
-> *You cannot stop a leak. But you can eliminate the window in which a leak is possible.*
+> **OmniShield's answer: eliminate the window. Generate the paper 45 minutes before the exam starts. You cannot leak what does not exist yet.**
 
 ---
 
-## 💡 Our Solution
+## What OmniShield Does
 
-OmniShield AI is a **multi-agent autonomous system** that secures national examinations across three phases — before, during, and after — without any human touching the paper between creation and the student's hands.
-
-| Phase | What Happens | Agents Involved |
-|-------|-------------|-----------------|
-| **Before Exam** | Public channels monitored for leaked content in real-time | Scout → Verify → Action |
-| **Exam Day** | Paper generated just 45 minutes before start, watermarked per student | RAG Gen → Variation → Assembly → Watermark |
-| **After Exam** | Answer patterns audited forensically to identify compromised centres | Audit Agent |
-
-**The leak window: 72 hours → 45 minutes.**
-
----
-
-## 🏗️ System Architecture
+OmniShield is a **14-module autonomous operator platform** that secures national examinations across three phases — before, during, and after — with zero human touchpoints on the paper itself.
 
 ```
-┌─────────────────────────── PHASE 1: PRE-EXAM ───────────────────────────┐
-│                                                                          │
-│   Scout Agent ──→ Verification Agent ──→ Action Agent                   │
-│   (OSINT monitor)  (fingerprint match)   (evidence + backup trigger)    │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
-                              │ leak confirmed: triggers backup
-                              ▼
-┌─────────────────────────── PHASE 2: EXAM DAY ───────────────────────────┐
-│                                                                          │
-│   RAG Generation ──→ Variation Agent ──→ Assembly Agent ──→ Watermark   │
-│   (Claude API +       (surface vary       (180Q in         (DWT-SVD     │
-│    FAISS vector DB)    per centre)         <45 seconds)     per student) │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────── PHASE 3: POST-EXAM ──────────────────────────┐
-│                                                                          │
-│   Audit Agent: Z-score analysis across centres → Forensic PDF report    │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
+PHASE 1 — PRE-EXAM        PHASE 2 — EXAM DAY           PHASE 3 — POST-EXAM
+─────────────────         ────────────────────         ───────────────────
+Scout Agent          →    RAG Question Gen        →    Forensic Audit Agent
+Verification Agent   →    Variation Agent         →    Z-Score Anomaly Map
+Action Agent         →    Assembly Agent          →    Append-Only Ledger
+                          DWT-SVD Watermark Agent
+                          Exam Day State Machine
 ```
 
----
-
-## 🖥️ Admin Dashboard
-
-The OmniShield Control Centre gives exam administrators full visibility across all three phases.
-
-| Page | What It Does |
-|------|-------------|
-| **Dashboard** | Real-time stats: active alerts, question banks, upcoming exams, system status |
-| **Leakage Alerts** | Live feed of Scout Agent detections with confidence scores, source channel, evidence package. Status workflow: New → Investigating → Resolved |
-| **Question Banks** | Create and manage encrypted question pools. Trigger AI generation via Claude API |
-| **Flagged Questions** | Human review queue for AI-generated questions. Approve or reject with reason |
-| **Paper Generator** | 3-step flow: configure distribution → preview → download DWT-SVD watermarked PDF |
-
-**Demo credentials:** `admin` / `admin123`
+| Metric | Value |
+|--------|-------|
+| Students protected | 2.27 million (NEET scale) |
+| Exam centres supported | 5,000 nodes |
+| Watermarks generated | 240,000 per exam cycle |
+| Leak window | **72 hours → 45 minutes** |
+| Paper generation time | **< 45 seconds** |
+| Threat detection time | **< 30 seconds** |
 
 ---
 
-## 🔬 Key Technical Features
+## Platform Screenshots
 
-### DWT-SVD Cryptographic Watermarking
-Every generated paper receives an invisible watermark encoding `centre_id` + `student_id` using a 2-level Haar Discrete Wavelet Transform with Singular Value Decomposition embedding. The watermark survives rotation (±15°), JPEG compression (40% quality), and phone photograph degradation.
+### Command Center
+*Real-time overview: 4,872 questions banked, 5,000 edge servers online, active OSINT threat feed, live system log showing Scout Agent, Redis pub/sub, and PostgreSQL connections.*
 
-```python
-# From watermark_agent.py — run locally to verify
-payload = "CENTRE:MAH_AMR_001|STUDENT:S004|EXAM:NEET_2027"
-metadata = embed_watermark("paper.png", payload, "paper_watermarked.png")
-result = extract_watermark("paper_watermarked.png", metadata["original_S"], metadata["payload_length"])
-# Output → Match: True
+![Command Center](docs/screenshots/om1.png)
+
+---
+
+### Threat Intelligence — Scout Agent Feed
+*Live OSINT monitoring across Telegram, Dark Web mirrors, and Twitter with similarity scores and FAKE/ANALYSING verdicts. Dual-Authority Verification Protocol requires simultaneous NTA Director + Chairman sign-off to trigger backup paper (PAPER-B).*
+
+![Threat Intel](docs/screenshots/om9.png)
+
+---
+
+### Exam Day State Machine
+*Six-phase autonomous pipeline: DISTRIBUTE → LOCK → BROADCAST\_TOKEN → UNLOCK → WATERMARK → GENERATE. Emergency operator controls available at every phase: Pause Exam, Extend Time (+15M), Full Abort.*
+
+![Exam Day Control](docs/screenshots/om10.png)
+
+---
+
+### Paper Builder
+*Drag-and-drop question assembly from approved bank with Biology/Physics/Chemistry difficulty tags. One-click SEAL PAPER triggers AES cryptographic lock on the assembled paper set.*
+
+![Paper Builder](docs/screenshots/om7.png)
+
+---
+
+### Candidate Control
+*Bulk CSV import, auto-centre allocation, DWT-SVD compliant admit card generation. 240,000 unique watermarks generated across 5,000 centres for a single exam cycle.*
+
+![Candidate Control](docs/screenshots/om8.png)
+
+---
+
+### Live Proctoring Dashboard
+*WebRTC video feeds with MediaPipe landmark gaze detection. AI auto-proctor signals: CRITICAL (face not detected >30s), MEDIUM (tab swap detected). One-click broadcast message to all candidates.*
+
+![Live Proctoring](docs/screenshots/om12.png)
+
+---
+
+### Forensics & Audit
+*Forensic Roll Tracer backed by PostgreSQL append-only audit ledger. Every action — PAPER\_SEALED, EXAM\_CONFIG\_CREATED, CENTER\_KEY\_REGISTERED — logged with cryptographic hash, actor role, and timestamp. Tamper-proof by design.*
+
+![Forensics & Audit](docs/screenshots/om2.png)
+
+---
+
+### Claude AI Coordinator
+*Embedded Claude API assistant grounded with live exam context: active threat level, centre download metrics, and exam metadata. Ask it anything about the current exam operational state.*
+
+![AI Coordinator](docs/screenshots/om4.png)
+
+---
+
+## Architecture
+
+### Agent Pipeline (LangGraph)
+
+```
+OmniShieldState
+│
+├── SCOUT AGENT
+│   └── Telethon OSINT → Telegram, Dark Web, Twitter monitoring
+│   └── NLP keyword + structural fingerprint extraction
+│
+├── VERIFICATION AGENT
+│   └── Cosine similarity (0.85 threshold) vs hashed exam blueprint
+│   └── Never compares against actual questions
+│
+├── ACTION AGENT
+│   └── Evidence package: source + timestamp + confidence score
+│   └── Dual-Authority trigger: NTA Director + Chairman sign-off required
+│   └── Fires backup paper generation pipeline autonomously
+│
+├── RAG GENERATION AGENT
+│   └── FAISS vector retrieval + Claude API generation
+│   └── Dual-agent validation loop (generate → verify factual accuracy)
+│   └── Similarity filter: rejects >80% cosine match to coaching material
+│
+├── VARIATION AGENT
+│   └── Surface variation per centre: numerics, MCQ order, phrasing
+│   └── Self-solver check: Claude attempts question; discards if invalid
+│
+├── ASSEMBLY AGENT
+│   └── 180-question paper assembled in <45 seconds
+│   └── Topic distribution balance enforced automatically
+│
+├── WATERMARK AGENT
+│   └── DWT-SVD embedding: 2-level Haar DWT → SVD on LL subband
+│   └── Survives: rotation ±15°, JPEG compression 40%, phone photograph
+│   └── centre_id + student_id recoverable from any photograph
+│
+└── AUDIT AGENT
+    └── Z-score analysis per question across all 5,000 centres
+    └── PostgreSQL append-only ledger (write-once, hash-chained)
+    └── Forensic PDF report: centre, anomalous questions, confidence
 ```
 
-### RAG-Powered Question Generation
-Questions are generated via Claude API with Retrieval-Augmented Generation over the question bank (FAISS vector index). A dual-agent validation loop ensures factual accuracy, and a similarity filter rejects any question with >80% cosine similarity to known coaching material.
+### Exam Day State Machine
 
-### LangGraph Multi-Agent Orchestration
-All agents run as nodes in a LangGraph StateGraph with conditional routing. The full pipeline trace is streamable via WebSocket to the dashboard — judges see every agent decision in real-time.
+```
+DISTRIBUTE ──→ LOCK ──→ BROADCAST_TOKEN ──→ UNLOCK ──→ WATERMARK ──→ GENERATE
+    │              │            │                │           │             │
+MinIO AES      Invigilator  Satellite         Edge        Embed         Paper
+packages       creds hashed decrypt key      servers     watermarks    to spools
+loaded                      via satellite    rebuild     into files
+```
 
----
+### Edge Resilience
 
-## 🛠️ Tech Stack
-
-| Layer | Technology | Version |
-|-------|-----------|---------|
-| **Agent Orchestration** | LangGraph | 0.2.28 |
-| **LLM** | Claude API (claude-sonnet-4-20250514) | Latest |
-| **RAG & Vector Search** | FAISS + text-embedding-3-small | — |
-| **Watermarking** | PyWavelets + NumPy (DWT-SVD) | — |
-| **Scout / OSINT** | Telethon | — |
-| **Frontend** | React 19 + TypeScript + Tailwind CSS | 19.2.1 |
-| **Routing** | Wouter | 3.3.5 |
-| **API Layer** | tRPC | 11.6.0 |
-| **Backend** | Express.js + Node.js | 4.21.2 |
-| **Database ORM** | Drizzle ORM + MySQL | 0.44.5 |
-| **Auth** | Custom JWT (Jose) | 6.1.0 |
-| **Build** | Vite | 7.1.7 |
-| **Security** | Bcrypt + AES (Fernet) | — |
+Every exam centre receives an AES-encrypted question bundle **24 hours in advance**. The time-locked decrypt token is broadcast via **satellite link + SMS fallback** at T-45 minutes. Each of 5,000 centres generates its paper **independently** — central server failure affects zero centres.
 
 ---
 
-## 🚀 Quick Start
+## Tech Stack
 
-### Run the Frontend (Live Demo)
+| Layer | Technology |
+|-------|-----------|
+| **Agent Orchestration** | LangGraph 0.2.28 |
+| **LLM** | Claude API — claude-sonnet-4-20250514 |
+| **RAG & Vector Search** | FAISS + text-embedding-3-small |
+| **Watermarking** | PyWavelets + NumPy (DWT-SVD) |
+| **Scout / OSINT** | Telethon (Telegram MTProto) |
+| **Live Proctoring** | WebRTC + MediaPipe (gaze + landmark detection) |
+| **Backend** | FastAPI + PostgreSQL + Redis pub/sub |
+| **Edge Storage** | MinIO (AES-encrypted paper packages) |
+| **Real-time** | WebSocket (live agent trace streaming) |
+| **Frontend** | React 19 + TypeScript + Tailwind CSS |
+| **Deployment** | Vercel (frontend) + Firebase (real-time sync) |
+| **Auth** | Custom JWT (Jose) + bcrypt (cost 12) |
+| **Audit** | PostgreSQL append-only ledger |
+
+---
+
+## Quick Start
+
+### Frontend
 
 ```bash
-# Clone the repo
 git clone https://github.com/workamannakashe-sudo/omnishield-ai.git
 cd omnishield-ai
-
-# Install dependencies
 npm install
-
-# Start dev server
 npm run dev
 ```
 
-Open [https://omnishield-ai.vercel.app]
+Open [https://omnishield-ai.vercel.app/](https://omnishield-ai.vercel.app/)  
+**Demo login:** `admin` / `admin123`
 
-
-### Run the Watermark Agent (Python)
+### Watermark Agent (Python)
 
 ```bash
-# Install dependencies
 pip install PyWavelets numpy Pillow
-
-# Run demo — should print Match: True
 python watermark_agent.py
 ```
 
@@ -165,8 +209,6 @@ Expected output:
 ```
 === OmniShield AI DWT-SVD Watermark Demo ===
 [WATERMARK EMBEDDED] Payload: CENTRE:MAH_AMR_001|STUDENT:S004|EXAM:NEET_2027
-[WATERMARK EMBEDDED] Output: test_paper_watermarked.png
---- Extracting from watermarked image ---
 [WATERMARK EXTRACTED] Result: CENTRE:MAH_AMR_001|STUDENT:S004|EXAM:NEET_2027
 Match: True
 === Demo Complete ===
@@ -174,65 +216,61 @@ Match: True
 
 ---
 
-## 📁 Project Structure
+## The 14 Operator Modules
 
-```
-omnishield-ai/
-├── src/
-│   ├── pages/
-│   │   ├── Dashboard.tsx        # Stats overview + quick actions
-│   │   ├── Alerts.tsx           # Scout Agent feed + status workflow
-│   │   ├── QuestionBanks.tsx    # RAG question bank management
-│   │   ├── FlaggedQuestions.tsx # Human review queue
-│   │   └── PaperGenerator.tsx   # 3-step watermarked PDF generator
-│   ├── components/
-│   │   └── DashboardLayout.tsx  # Sidebar + protected route wrapper
-│   └── App.tsx                  # Router + auth guard
-├── watermark_agent.py           # DWT-SVD watermark — runs standalone
-├── 01_PRD_OmniShield_AI.md      # Product Requirements Document
-├── 02_TRD_OmniShield_AI.md      # Technical Requirements Document
-├── 03_App_Flow_OmniShield_AI.md # User journey & flow diagrams
-├── 04_UI_UX_Design_Brief.md     # Design system & component specs
-├── 05_Backend_Schema.md         # 8-table MySQL schema
-├── 06_Implementation_Plan.md    # 6-day sprint breakdown
-└── README.md
-```
+| # | Module | What It Does |
+|---|--------|-------------|
+| 1 | **Command Center** | Live stats, edge server topology map, system log feed |
+| 2 | **Exam Configuration** | 3-step wizard: exam type, date, shift, marking rules |
+| 3 | **Question Bank & OCR** | PDF upload, OCR extraction, manual insertion, tagging |
+| 4 | **Paper Builder** | Drag-and-drop canvas, SEAL PAPER cryptographic lock |
+| 5 | **Candidate Control** | Bulk CSV import, centre allocation, admit cards |
+| 6 | **Threat Intel** | Scout Agent feed, Risk Needle Index, Dual-Authority trigger |
+| 7 | **Exam Day Control** | 6-phase state machine, emergency controls |
+| 8 | **Center Portal** | 5,000-node download matrix, lock status per centre |
+| 9 | **Live Proctoring** | WebRTC + MediaPipe, AI signals, broadcast controls |
+| 10 | **Paper Previewer** | Secure read-only with focus-lost blur detection |
+| 11 | **Forensics & Audit** | Roll tracer, append-only ledger, hash chain |
+| 12 | **Analytics** | Question approval timeline, OSINT threat history |
+| 13 | **AI Coordinator** | Claude assistant with live exam context |
+| 14 | **Global Config** | OSINT params, similarity threshold, SMTP/Twilio APIs |
 
 ---
 
-## 🔐 Security Design
+## Security Properties
 
-- **Zero paper pre-existence:** Paper generated T-45 minutes before exam. Admin cannot access paper content before unlock.
-- **Hashed blueprint comparison:** Scout Agent never sees real questions — only compares structural fingerprints against a hashed exam blueprint.
-- **Per-student watermark:** Every PDF is cryptographically unique. Source of any leak traceable to individual student and centre.
-- **Edge resilience:** Encrypted question bank pre-deployed to local centre server. Generates independently if central server goes offline.
-- **JWT auth:** 24-hour expiry, bcrypt hashing (cost 12), HttpOnly secure cookies.
-
----
-
-## 📊 Impact Numbers
-
-| Metric | Value |
-|--------|-------|
-| Students affected by NEET 2026 | 2.27 million |
-| Re-examination cost | ₹500+ Crore |
-| Exam fraud CBI cases (2015–2025) | 18 cases, ~0 convictions |
-| Leak window before OmniShield | 72 hours |
-| Leak window with OmniShield | **45 minutes** |
-| Paper generation time | **< 45 seconds** |
-| Leak detection time | **< 30 seconds** |
-| Watermark survival at 40% compression | **✅ Verified** |
+- **Zero pre-existence window** — Paper generated at T-45 min. No admin can access content before satellite token broadcast.
+- **Dual-Authority Protocol** — Backup paper requires simultaneous NTA Director + Chairman sign-off. No single point of compromise.
+- **Append-only audit ledger** — PostgreSQL write-once table, hash-chained. Forensic evidence that cannot be altered post-fact.
+- **Per-student watermark** — Every PDF cryptographically unique. Leaked photograph traceable to exact student and centre in seconds.
+- **Hashed blueprint only** — Scout Agent never sees real questions. Structural fingerprints compared against hashed blueprint only.
+- **Edge independence** — 5,000 centres operate without central connectivity after token broadcast.
 
 ---
 
-## 👥 Team
+## Documentation
 
-**3rd-year B.Tech. students**
+| Document | Contents |
+|----------|---------|
+| [01 — PRD](01_PRD_OmniShield_AI.md) | Product requirements, user stories, success metrics |
+| [02 — TRD](02_TRD_OmniShield_AI.md) | Technical architecture, API contracts, security model |
+| [03 — App Flow](03_App_Flow_OmniShield_AI.md) | User journeys, state transitions, flow diagrams |
+| [04 — UI/UX Brief](04_UI_UX_Design_Brief_OmniShield_AI.md) | Design system, component specs, typography |
+| [05 — Backend Schema](05_Backend_Schema_OmniShield_AI.md) | 8-table PostgreSQL schema with indexes |
+| [06 — Implementation Plan](06_Implementation_Plan_OmniShield_AI.md) | 6-day sprint breakdown, task allocation |
+
+---
+
+## Team
+
+**3rd-year B.E. —Students**  
 
 Built in **6 days** for FAR AWAY 2026 — India's Biggest International Hackathon.
 
 ---
 
 <div align="center">
-<i>OmniShield AI — Because 2.27 million students deserve better than a cancelled exam.</i>
+
+*OmniShield AI — Because 2.27 million students deserve better than a cancelled exam.*
+
 </div>

@@ -458,7 +458,15 @@ export default function UploadPaper() {
           </div>
         </div>
 
-        <span className="text-xs font-mono text-[#ffcc44]">Wizard step {step} of 5</span>
+        <div className="flex items-center gap-3">
+          <a
+            href="/admin/paper-archive"
+            className="px-3 py-1.5 bg-[#162030] hover:bg-[#162030]/80 border border-[#162030] text-white rounded-lg text-[10px] uppercase font-bold transition-all flex items-center gap-1"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Paper Archive
+          </a>
+          <span className="text-xs font-mono text-[#ffcc44]">Wizard step {step} of 5</span>
+        </div>
       </header>
 
       <div className="max-w-7xl mx-auto px-6 mt-6">

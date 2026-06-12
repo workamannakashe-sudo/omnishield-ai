@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { 
   Shield, FileText, Search, Filter, Layers, Download, Play, 
-  Trash2, Eye, Calendar, ArrowLeft, RefreshCw, AlertCircle, CheckCircle
+  Trash2, Eye, Calendar, ArrowLeft, RefreshCw, AlertCircle, CheckCircle, Plus, X, Upload
 } from 'lucide-react';
 
 export default function PaperArchive() {
@@ -21,6 +21,21 @@ export default function PaperArchive() {
   const [filterExam, setFilterExam] = useState('ALL');
   const [filterYear, setFilterYear] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
+
+  // PDF Paper Direct Upload States
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [pdfPaperFile, setPdfPaperFile] = useState<File | null>(null);
+  const [pdfPaperName, setPdfPaperName] = useState('');
+  const [pdfExamName, setPdfExamName] = useState('NEET UG 2026');
+  const [pdfExamDate, setPdfExamDate] = useState(new Date().toISOString().slice(0, 10));
+  const [pdfShift, setPdfShift] = useState('Morning');
+  const [pdfSetCode, setPdfSetCode] = useState('A');
+  const [pdfExamTypeId, setPdfExamTypeId] = useState(1);
+  const [pdfDuration, setPdfDuration] = useState(180);
+  const [pdfSecurityLevel, setPdfSecurityLevel] = useState('HIGH');
+  const [pdfUploading, setPdfUploading] = useState(false);
+  const [pdfUploadResult, setPdfUploadResult] = useState<any>(null);
+  const [pdfDragging, setPdfDragging] = useState(false);
 
   // Login form state
   const [loginUser, setLoginUser] = useState('');
@@ -69,6 +84,45 @@ export default function PaperArchive() {
       setLoginError(err.message);
     } finally {
       setIsLoggingIn(false);
+    }
+  };
+
+  const handlePdfPaperUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pdfPaperFile) { alert('Please select a PDF file.'); return; }
+    if (!pdfPaperName.trim()) { alert('Please enter a paper name.'); return; }
+    if (!pdfExamName.trim()) { alert('Please enter an exam name.'); return; }
+    if (!pdfExamDate.trim()) { alert('Please enter the exam date.'); return; }
+
+    setPdfUploading(true);
+    setPdfUploadResult(null);
+
+    const formData = new FormData();
+    formData.append('paper_name', pdfPaperName);
+    formData.append('exam_name', pdfExamName);
+    formData.append('exam_date', pdfExamDate);
+    formData.append('shift', pdfShift);
+    formData.append('set_code', pdfSetCode);
+    formData.append('exam_type_id', String(pdfExamTypeId));
+    formData.append('duration', String(pdfDuration));
+    formData.append('security_level', pdfSecurityLevel);
+    formData.append('file', pdfPaperFile);
+
+    try {
+      const res = await fetch('http://localhost:8001/api/papers/upload-pdf', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Upload failed');
+      setPdfUploadResult(data);
+      alert('Paper uploaded and sealed successfully!');
+      fetchUploadedPapers(token);
+    } catch (err: any) {
+      alert('Error: ' + err.message);
+    } finally {
+      setPdfUploading(false);
     }
   };
 
@@ -192,12 +246,25 @@ export default function PaperArchive() {
           </div>
         </div>
 
-        <button 
-          onClick={() => setShowTimeline(!showTimeline)}
-          className="px-4 py-2 bg-[#162030] hover:bg-[#162030]/80 border border-[#162030] text-white font-bold rounded-xl text-xs uppercase transition-all"
-        >
-          {showTimeline ? 'View Grid Library' : 'View Chronological Timeline'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setPdfPaperFile(null);
+              setPdfPaperName('');
+              setPdfUploadResult(null);
+              setShowUploadModal(true);
+            }}
+            className="px-4 py-2 bg-[#ffcc44] hover:bg-[#ffcc44]/90 text-black font-bold rounded-xl text-xs uppercase transition-all flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" /> Upload Sealed PDF Paper
+          </button>
+          <button 
+            onClick={() => setShowTimeline(!showTimeline)}
+            className="px-4 py-2 bg-[#162030] hover:bg-[#162030]/80 border border-[#162030] text-white font-bold rounded-xl text-xs uppercase transition-all"
+          >
+            {showTimeline ? 'View Grid Library' : 'View Chronological Timeline'}
+          </button>
+        </div>
       </header>
 
       <div className="max-w-7xl mx-auto px-6 mt-6 space-y-6">
@@ -330,6 +397,183 @@ export default function PaperArchive() {
         )}
 
       </div>
+
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#080d14] border border-[#162030] w-full max-w-2xl rounded-2xl p-6 shadow-2xl space-y-4 relative max-h-[90vh] overflow-y-auto">
+            <button 
+              onClick={() => setShowUploadModal(false)}
+              className="absolute top-4 right-4 p-1 rounded-full bg-[#162030] hover:bg-[#ff3b5c]/20 hover:text-[#ff3b5c] text-gray-400 transition-all"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2.5 border-b border-[#162030] pb-3">
+              <div className="w-8 h-8 bg-[#ffcc44]/10 rounded border border-[#ffcc44]/30 flex items-center justify-center">
+                <Shield className="w-4 h-4 text-[#ffcc44]" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">🔐 Direct PDF Sealed Paper Configuration</h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">Seals a complete exam booklet PDF directly with AES-256-GCM.</p>
+              </div>
+            </div>
+
+            <form onSubmit={handlePdfPaperUpload} className="space-y-4">
+              {/* Drag-drop zone */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setPdfDragging(true); }}
+                onDragLeave={() => setPdfDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setPdfDragging(false);
+                  const dropped = e.dataTransfer.files?.[0];
+                  if (dropped && dropped.name.toLowerCase().endsWith('.pdf')) {
+                    setPdfPaperFile(dropped);
+                  } else {
+                    alert('Only PDF files are accepted here.');
+                  }
+                }}
+                className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all relative ${
+                  pdfDragging ? 'border-[#ffcc44] bg-[#ffcc44]/5' : 'border-[#162030] hover:border-[#ffcc44]/50 bg-[#05080d]/50'
+                }`}
+              >
+                <input
+                  type="file"
+                  accept=".pdf"
+                  onChange={(e) => setPdfPaperFile(e.target.files ? e.target.files[0] : null)}
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+                {pdfPaperFile ? (
+                  <>
+                    <span className="text-3xl mb-2">📄</span>
+                    <span className="text-xs text-[#ffcc44] font-bold">{pdfPaperFile.name}</span>
+                    <span className="text-[10px] text-gray-400 mt-1">{(pdfPaperFile.size / 1024).toFixed(1)} KB — Click or drag to replace</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-3xl mb-2">📥</span>
+                    <span className="text-xs text-white font-medium">Drag & Drop complete exam PDF here</span>
+                    <span className="text-[10px] text-gray-400 mt-1">Or click to browse — PDF files only</span>
+                    <span className="text-[10px] text-[#ffcc44]/75 mt-1 font-semibold">This will be sealed as the final question paper</span>
+                  </>
+                )}
+              </div>
+
+              {/* Metadata fields */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-[9px] font-mono text-gray-400 uppercase block font-semibold">Paper Name *</label>
+                  <input
+                    type="text"
+                    value={pdfPaperName}
+                    onChange={(e) => setPdfPaperName(e.target.value)}
+                    placeholder="e.g. NEET UG 2026 — Morning Set A"
+                    className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-white outline-none focus:border-[#ffcc44]"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-gray-400 uppercase block font-semibold">Exam Name *</label>
+                  <input
+                    type="text"
+                    value={pdfExamName}
+                    onChange={(e) => setPdfExamName(e.target.value)}
+                    placeholder="NEET UG 2026"
+                    className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-white outline-none focus:border-[#ffcc44]"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-gray-400 uppercase block font-semibold">Exam Date *</label>
+                  <input
+                    type="date"
+                    value={pdfExamDate}
+                    onChange={(e) => setPdfExamDate(e.target.value)}
+                    className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-white outline-none focus:border-[#ffcc44]"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-gray-400 uppercase block font-semibold">Shift</label>
+                  <select value={pdfShift} onChange={(e) => setPdfShift(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-white outline-none focus:border-[#ffcc44]">
+                    <option>Morning</option>
+                    <option>Afternoon</option>
+                    <option>Evening</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-gray-400 uppercase block font-semibold">Set Code</label>
+                  <select value={pdfSetCode} onChange={(e) => setPdfSetCode(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-white outline-none focus:border-[#ffcc44]">
+                    <option>A</option>
+                    <option>B</option>
+                    <option>C</option>
+                    <option>D</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-gray-400 uppercase block font-semibold">Duration (min)</label>
+                  <input
+                    type="number"
+                    value={pdfDuration}
+                    onChange={(e) => setPdfDuration(Number(e.target.value))}
+                    className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-white outline-none focus:border-[#ffcc44]"
+                    min={30} max={360}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-mono text-gray-400 uppercase block font-semibold">Security Level</label>
+                  <select value={pdfSecurityLevel} onChange={(e) => setPdfSecurityLevel(e.target.value)} className="w-full bg-[#05080d] border border-[#162030] rounded-xl p-3 text-white outline-none focus:border-[#ffcc44]">
+                    <option>LOW</option>
+                    <option>MEDIUM</option>
+                    <option>HIGH</option>
+                    <option>CRITICAL</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Result banner */}
+              {pdfUploadResult && (
+                <div className="rounded-xl bg-green-500/10 border border-green-500/30 p-4 space-y-3">
+                  <p className="text-xs font-bold text-green-400 uppercase flex items-center gap-1.5">
+                    <CheckCircle className="w-4 h-4" /> Paper Sealed Successfully
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-gray-400">
+                    <div>Paper ID: <span className="text-white">#{pdfUploadResult.paper_id}</span></div>
+                    <div>Exam ID: <span className="text-white">#{pdfUploadResult.exam_id}</span></div>
+                    <div>Set Code: <span className="text-white">{pdfUploadResult.set_code}</span></div>
+                    <div>Size: <span className="text-white">{(pdfUploadResult.file_size_bytes / 1024).toFixed(1)} KB</span></div>
+                  </div>
+                  <p className="text-[10px] text-gray-500 font-mono break-all bg-[#05080d] p-2 border border-[#162030] rounded-lg font-semibold">SHA-256: {pdfUploadResult.paper_hash}</p>
+                  
+                  <div className="pt-2 flex flex-col gap-2">
+                    <a
+                      href={`http://localhost:8001/api/papers/${pdfUploadResult.paper_id}/download-bundle?key=OMNISHIELD-KEY-2026-NEET`}
+                      download
+                      className="w-full py-3 bg-[#ffcc44] hover:bg-[#ffcc44]/90 text-black font-bold rounded-xl text-xs uppercase tracking-widest text-center transition-all shadow-md block"
+                    >
+                      📥 Download Sealed Encrypted Bundle
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {!pdfUploadResult && (
+                <button
+                  type="submit"
+                  disabled={pdfUploading || !pdfPaperFile}
+                  className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all shadow-lg flex items-center justify-center gap-2"
+                >
+                  {pdfUploading ? (
+                    <><RefreshCw className="w-4 h-4 animate-spin" /> Uploading & Sealing...</>
+                  ) : (
+                    <>🔐 Upload & Seal PDF Paper</>
+                  )}
+                </button>
+              )}
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

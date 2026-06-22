@@ -102,20 +102,71 @@ def generate_question(
         }
     }
 
+class QuestionCreate(BaseModel):
+    exam_type_id: int
+    text: str
+    options: dict
+    answer: str
+    subject: str
+    bloom_level: str
+    difficulty: str
+
+@router.post("", response_model=Question)
+def create_question(q: QuestionCreate, db: Session = Depends(get_session)):
+    text_json = json.dumps({"en": q.text})
+    options_json = json.dumps({"en": q.options})
+    audit_hash = calculate_sha256(text_json.encode('utf-8'))
+    
+    db_q = Question(
+        exam_type_id=q.exam_type_id,
+        text_json=text_json,
+        options_json=options_json,
+        answer=q.answer,
+        subject=q.subject,
+        chapter="Manual Chapter",
+        topic="Manual Topic",
+        bloom_level=q.bloom_level,
+        difficulty=q.difficulty,
+        question_type="MCQ_single",
+        source="Manual",
+        audit_hash=audit_hash,
+        status="APPROVED"
+    )
+    db.add(db_q)
+    db.commit()
+    db.refresh(db_q)
+    
+    try:
+        increment_live_counter("questions_banked")
+    except Exception:
+        pass
+    
+    # Publish real-time counter update
+    event_data = {"question_id": db_q.id, "subject": db_q.subject, "status": db_q.status}
+    try:
+        publish_event("omnishield:questions", "NEW_QUESTION", event_data)
+    except Exception:
+        pass
+        
+    return db_q
+
 @router.get("", response_model=List[Question])
 def list_questions(
     subject: Optional[str] = None,
     bloom: Optional[str] = None,
     status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
     db: Session = Depends(get_session)
 ):
-    stmt = select(Question)
+    stmt = select(Question).order_by(Question.id.desc())
     if subject:
         stmt = stmt.where(Question.subject == subject)
     if bloom:
         stmt = stmt.where(Question.bloom_level == bloom)
     if status:
         stmt = stmt.where(Question.status == status)
+    stmt = stmt.limit(limit).offset(offset)
     return db.exec(stmt).all()
 
 @router.get("/stats")

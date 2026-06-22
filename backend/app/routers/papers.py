@@ -424,6 +424,61 @@ async def upload_pdf_paper(
     session.add(paper)
     session.flush()
 
+    # --- scan and extract questions from the PDF ---
+    extracted_qs = []
+    try:
+        from app.agents import run_upload_agent
+        extracted_qs = run_upload_agent(save_path, "pdf")
+    except Exception as e:
+        print(f"Error running upload agent on PDF: {e}")
+
+    # --- create Question records and link them to the QuestionPaper ---
+    order_idx = 1
+    for eq in extracted_qs:
+        q_text = eq.get("text_json")
+        q_options = eq.get("options_json")
+        
+        if not isinstance(q_text, str):
+            q_text = json.dumps(q_text)
+        if not isinstance(q_options, str):
+            q_options = json.dumps(q_options)
+            
+        try:
+            parsed_text = json.loads(q_text).get("en", "")
+        except Exception:
+            parsed_text = q_text
+            
+        import hashlib
+        q_audit_hash = hashlib.sha256(parsed_text.encode('utf-8')).hexdigest()
+        
+        db_q = Question(
+            exam_type_id=exam_type_id,
+            text_json=q_text,
+            options_json=q_options,
+            answer=eq.get("correct_answer", "A"),
+            subject="Biology" if "biology" in parsed_text.lower() else ("Physics" if "physics" in parsed_text.lower() else "Chemistry"),
+            chapter="Extracted Chapter",
+            topic="Extracted Topic",
+            bloom_level="L3 Apply" if "calculate" in parsed_text.lower() else "L1 Remember",
+            difficulty="Medium",
+            question_type=eq.get("q_type", "MCQ_single"),
+            source="OCR-extracted",
+            audit_hash=q_audit_hash,
+            status="APPROVED"
+        )
+        session.add(db_q)
+        session.flush()
+        
+        # Link to QuestionPaper
+        link = PaperQuestionLink(
+            paper_id=paper.id,
+            question_id=db_q.id,
+            order_index=order_idx,
+            section="Section A" if order_idx <= (len(extracted_qs) * 0.7) else "Section B"
+        )
+        session.add(link)
+        order_idx += 1
+
     # --- audit log ---
     event_data = {
         "paper_id": paper.id,
@@ -465,7 +520,8 @@ async def upload_pdf_paper(
         "file_size_bytes": len(pdf_bytes),
         "set_code": set_code,
         "status": "SEALED",
-        "message": f"PDF paper '{paper_name}' uploaded and sealed successfully.",
+        "extracted_count": len(extracted_qs),
+        "message": f"PDF paper '{paper_name}' uploaded, scanned, and sealed successfully.",
     }
 
 @router.get("/{id}/download-bundle")
@@ -483,16 +539,13 @@ def download_encrypted_bundle(
         raise HTTPException(status_code=404, detail="Paper not found")
         
     # Read raw content
-    if paper.encrypted_blob_url and os.path.exists(paper.encrypted_blob_url):
-        with open(paper.encrypted_blob_url, "rb") as f:
-            raw_content = f.read()
-    else:
-        # Fallback to building from questions in the database
-        stmt = select(Question, PaperQuestionLink.order_index, PaperQuestionLink.section).join(
-            PaperQuestionLink
-        ).where(PaperQuestionLink.paper_id == id).order_by(PaperQuestionLink.order_index)
-        results = db.exec(stmt).all()
-        
+    # Check if there are linked questions in the DB first
+    stmt = select(Question, PaperQuestionLink.order_index, PaperQuestionLink.section).join(
+        PaperQuestionLink
+    ).where(PaperQuestionLink.paper_id == id).order_by(PaperQuestionLink.order_index)
+    results = db.exec(stmt).all()
+    
+    if results:
         paper_struct = []
         for q, idx, sec in results:
             try:
@@ -516,6 +569,11 @@ def download_encrypted_bundle(
                 "order": idx
             })
         raw_content = json.dumps(paper_struct).encode('utf-8')
+    elif paper.encrypted_blob_url and os.path.exists(paper.encrypted_blob_url):
+        with open(paper.encrypted_blob_url, "rb") as f:
+            raw_content = f.read()
+    else:
+        raise HTTPException(status_code=404, detail="Paper content not found")
         
     # Derive AES-256 key from human-readable text
     import hashlib

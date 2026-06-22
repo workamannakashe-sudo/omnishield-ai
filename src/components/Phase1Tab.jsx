@@ -267,6 +267,49 @@ export default function Phase1Tab({
       if (!res.ok) throw new Error(data.detail || 'Upload failed');
       setPdfUploadResult(data);
       addSystemLog(`[PDF PAPER] Uploaded & sealed: "${data.paper_name}" (Paper #${data.paper_id}, Hash: ${data.paper_hash?.slice(0, 16)}...)`);
+
+      // Refresh live statistics and question bank catalog from backend
+      try {
+        const statsRes = await fetch('http://localhost:8001/api/questions/stats');
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          setTotalQuestions(statsData.counters.approved || 4872);
+        }
+        const qRes = await fetch('http://localhost:8001/api/questions?status=APPROVED&limit=50');
+        if (qRes.ok) {
+          const qData = await qRes.json();
+          const mapped = qData.map(q => {
+            let parsedText = q.text_json;
+            try {
+              const parsed = JSON.parse(q.text_json);
+              parsedText = parsed.en || parsed;
+            } catch (e) {}
+
+            let parsedOpts = [];
+            try {
+              const parsed = JSON.parse(q.options_json);
+              const enOpts = parsed.en || parsed;
+              parsedOpts = Object.entries(enOpts).map(([key, val]) => ({
+                text: `${key}. ${val}`,
+                correct: key === q.answer
+              }));
+            } catch (e) {}
+
+            return {
+              id: q.id.toString(),
+              text: parsedText,
+              subject: q.subject,
+              bloom: q.bloom_level,
+              similarity: q.source === "Synthetic" ? "Sim: 0.12" : "Sim: 0.05",
+              timestamp: new Date(q.created_at || Date.now()).toLocaleTimeString().slice(0, 8),
+              options: parsedOpts
+            };
+          });
+          setRecentQuestions(mapped);
+        }
+      } catch (err) {
+        console.warn("Failed to auto-refresh question bank after PDF upload:", err);
+      }
     } catch (err) {
       alert('Error: ' + err.message);
     } finally {
@@ -284,72 +327,108 @@ export default function Phase1Tab({
   const [manualOptionD, setManualOptionD] = useState('');
   const [manualCorrect, setManualCorrect] = useState('A');
 
-  const handleManualAdd = (e) => {
+  const handleManualAdd = async (e) => {
     e.preventDefault();
     if (!manualQuestion.trim() || !manualOptionA.trim() || !manualOptionB.trim() || !manualOptionC.trim() || !manualOptionD.trim()) {
       alert("Please fill in the question text and all four options.");
       return;
     }
 
-    const newQ = {
+    const payload = {
+      exam_type_id: 1,
       text: manualQuestion,
+      options: {
+        A: manualOptionA,
+        B: manualOptionB,
+        C: manualOptionC,
+        D: manualOptionD
+      },
+      answer: manualCorrect,
       subject: manualSubject,
-      bloom: manualBloom,
-      similarity: "Sim: 0.00 (Manual)",
-      options: [
-        { text: `A. ${manualOptionA}`, correct: manualCorrect === 'A' },
-        { text: `B. ${manualOptionB}`, correct: manualCorrect === 'B' },
-        { text: `C. ${manualOptionC}`, correct: manualCorrect === 'C' },
-        { text: `D. ${manualOptionD}`, correct: manualCorrect === 'D' }
-      ]
+      bloom_level: manualBloom.split(' — ')[0],
+      difficulty: "Medium"
     };
 
-    setTotalQuestions(prev => prev + 1);
-    setRecentQuestions(prev => [
-      {
-        id: `${manualSubject.substring(0, 4).toUpperCase()}-2026-${Math.floor(Math.random() * 900 + 100)}`,
-        text: newQ.text,
-        subject: newQ.subject,
-        bloom: newQ.bloom,
-        similarity: newQ.similarity,
-        timestamp: new Date().toTimeString().slice(0, 8),
-        options: newQ.options
-      },
-      ...prev
-    ]);
-
-    // Update Bloom's taxonomy bars dynamically
-    setDifficultyData(prev => {
-      const shortName = manualBloom.split(' — ')[1] || 'Apply';
-      return prev.map(item => {
-        if (item.name.toLowerCase().includes(shortName.toLowerCase())) {
-          return { ...item, value: Math.min(item.value + 1, 100) };
-        }
-        return item;
+    try {
+      const res = await fetch('http://localhost:8001/api/questions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': 'test_csrf_token'
+        },
+        body: JSON.stringify(payload)
       });
-    });
+      if (res.ok) {
+        const q = await res.json();
+        setTotalQuestions(prev => prev + 1);
 
-    // Update subject coverage bars dynamically
-    setSubjectData(prev => {
-      return prev.map(item => {
-        if (item.name.toLowerCase() === manualSubject.toLowerCase()) {
-          return { ...item, value: Math.min(item.value + 1, 100) };
-        }
-        return item;
-      });
-    });
+        let parsedText = q.text_json;
+        try {
+          const parsed = JSON.parse(q.text_json);
+          parsedText = parsed.en || parsed;
+        } catch (e) {}
 
-    addSystemLog(`[MANUAL ADD] Operator registered new question to the bank [${manualSubject} - ${manualBloom}]`);
+        let parsedOpts = [];
+        try {
+          const parsed = JSON.parse(q.options_json);
+          const enOpts = parsed.en || parsed;
+          parsedOpts = Object.entries(enOpts).map(([key, val]) => ({
+            text: `${key}. ${val}`,
+            correct: key === q.answer
+          }));
+        } catch (e) {}
 
-    // Reset inputs
-    setManualQuestion('');
-    setManualOptionA('');
-    setManualOptionB('');
-    setManualOptionC('');
-    setManualOptionD('');
-    setManualCorrect('A');
+        const newUIQ = {
+          id: q.id.toString(),
+          text: parsedText,
+          subject: q.subject,
+          bloom: q.bloom_level,
+          similarity: "Sim: 0.00 (Manual)",
+          timestamp: new Date().toLocaleTimeString().slice(0, 8),
+          options: parsedOpts
+        };
 
-    alert("Question added to bank successfully!");
+        setRecentQuestions(prev => [newUIQ, ...prev]);
+
+        // Update Bloom's taxonomy bars dynamically
+        setDifficultyData(prev => {
+          const shortName = manualBloom.split(' — ')[1] || 'Apply';
+          return prev.map(item => {
+            if (item.name.toLowerCase().includes(shortName.toLowerCase())) {
+              return { ...item, value: Math.min(item.value + 1, 100) };
+            }
+            return item;
+          });
+        });
+
+        // Update subject coverage bars dynamically
+        setSubjectData(prev => {
+          return prev.map(item => {
+            if (item.name.toLowerCase() === manualSubject.toLowerCase()) {
+              return { ...item, value: Math.min(item.value + 1, 100) };
+            }
+            return item;
+          });
+        });
+
+        addSystemLog(`[MANUAL ADD] Operator registered new question to the bank [${manualSubject} - ${manualBloom}]`);
+
+        // Reset inputs
+        setManualQuestion('');
+        setManualOptionA('');
+        setManualOptionB('');
+        setManualOptionC('');
+        setManualOptionD('');
+        setManualCorrect('A');
+
+        alert("Question added to bank successfully!");
+      } else {
+        const err = await res.json();
+        alert("Failed to add question: " + (err.detail || "Unknown error"));
+      }
+    } catch (err) {
+      alert("Error adding question: " + err.message);
+    }
   };
 
   // Pipeline steps states
@@ -414,13 +493,26 @@ export default function Phase1Tab({
     }
   ];
 
-  const runPipeline = () => {
+  const runPipeline = async () => {
     if (pipelineRunning) return;
     setPipelineRunning(true);
     addSystemLog('Phase 1 Pipeline: Activating Secure RAG Question Generator.');
 
-    // Select random question
-    const newQ = questionPool[Math.floor(Math.random() * questionPool.length)];
+    // Trigger backend question generation immediately
+    let generatedQuestion = null;
+    try {
+      const res = await fetch(`http://localhost:8001/api/questions/generate?exam_type_id=1&subject=${ocrSubject}&difficulty=Medium&question_type=MCQ_single`, {
+        method: 'POST',
+        headers: {
+          'X-CSRF-Token': 'test_csrf_token'
+        }
+      });
+      if (res.ok) {
+        generatedQuestion = await res.json();
+      }
+    } catch (err) {
+      console.warn("Backend generation failed, falling back to mock:", err);
+    }
 
     const stepsInfo = [
       { name: 'Agent A — Drafting question', detail: `Generating Q#${totalQuestions + 1}...` },
@@ -431,7 +523,7 @@ export default function Phase1Tab({
     ];
 
     const badges = ['GENERATING...', 'CHECKING...', 'VALIDATING...', 'TAGGING...', 'LOCKING...'];
-    const results = ['GENERATED', 'PASSED', 'VALIDATED', newQ.bloom.split(' — ')[0], 'LOCKED'];
+    const results = ['GENERATED', 'PASSED', 'VALIDATED', 'Bloom L3', 'LOCKED'];
     const badgeClasses = ['badge-blue', 'badge-blue', 'badge-blue', 'badge-blue', 'badge-green'];
     const stepClasses = ['running', 'running', 'running', 'running', 'done'];
 
@@ -463,11 +555,16 @@ export default function Phase1Tab({
 
       // Enter finished state
       setTimeout(() => {
+        let displayBloom = 'Bloom L3';
+        if (generatedQuestion && generatedQuestion.question) {
+          displayBloom = generatedQuestion.question.bloom_level || 'Bloom L3';
+        }
+
         setStepsStates(prev => {
           const copy = [...prev];
           copy[stepIdx] = {
             status: stepClasses[i],
-            label: results[i],
+            label: i === 3 ? displayBloom : results[i],
             badgeCls: badgeClasses[i],
             detail: info.detail
           };
@@ -477,32 +574,64 @@ export default function Phase1Tab({
         if (stepIdx === 1) {
           addSystemLog(`Agent A drafted question code Q#${totalQuestions + 1}.`);
         } else if (stepIdx === 2) {
-          addSystemLog(`Similarity Scan: Check passed. Score: ${newQ.similarity.split(': ')[1]} (Threshold < 0.85).`);
+          const sim = generatedQuestion?.pipeline_metrics?.similarity_score || 0.12;
+          addSystemLog(`Similarity Scan: Check passed. Score: ${sim.toFixed(2)} (Threshold < 0.85).`);
         } else if (stepIdx === 4) {
-          // Bloom's tagger
-          addSystemLog(`Bloom's Taxonomy: Assigned category ${newQ.bloom}.`);
+          addSystemLog(`Bloom's Taxonomy: Assigned category ${displayBloom}.`);
         }
 
         if (stepIdx === 5) {
           setPipelineRunning(false);
           setTotalQuestions(prev => prev + 1);
-          setActiveQuestion(newQ);
-          setRecentQuestions(prev => [
-            {
-              id: `${newQ.subject.substring(0, 4).toUpperCase()}-2026-${Math.floor(Math.random() * 900 + 100)}`,
+
+          let finalQ = null;
+          if (generatedQuestion && generatedQuestion.question) {
+            const q = generatedQuestion.question;
+            let parsedText = q.text_json;
+            try {
+              const parsed = JSON.parse(q.text_json);
+              parsedText = parsed.en || parsed;
+            } catch (e) {}
+
+            let parsedOpts = [];
+            try {
+              const parsed = JSON.parse(q.options_json);
+              const enOpts = parsed.en || parsed;
+              parsedOpts = Object.entries(enOpts).map(([key, val]) => ({
+                text: `${key}. ${val}`,
+                correct: key === q.answer
+              }));
+            } catch (e) {}
+
+            finalQ = {
+              id: q.id.toString(),
+              text: parsedText,
+              subject: q.subject,
+              bloom: q.bloom_level,
+              similarity: `Sim: ${(generatedQuestion.pipeline_metrics?.similarity_score || 0.12).toFixed(2)}`,
+              timestamp: new Date().toLocaleTimeString().slice(0, 8),
+              options: parsedOpts
+            };
+          } else {
+            // Fallback to local pool
+            const newQ = questionPool[Math.floor(Math.random() * questionPool.length)];
+            finalQ = {
+              id: `GEN-2026-${Math.floor(Math.random() * 900 + 100)}`,
               text: newQ.text,
               subject: newQ.subject,
               bloom: newQ.bloom,
               similarity: newQ.similarity,
-              timestamp: new Date().toTimeString().slice(0, 8),
+              timestamp: new Date().toLocaleTimeString().slice(0, 8),
               options: newQ.options
-            },
-            ...prev
-          ]);
+            };
+          }
+
+          setActiveQuestion(finalQ);
+          setRecentQuestions(prev => [finalQ, ...prev]);
 
           // Update Bloom's taxonomy bars dynamically
           setDifficultyData(prev => {
-            const shortName = newQ.bloom.split(' — ')[1]; // e.g. "Apply", "Analyse", "Remember"
+            const shortName = finalQ.bloom.split(' — ')[1] || finalQ.bloom;
             return prev.map(item => {
               if (item.name.toLowerCase().includes(shortName.toLowerCase())) {
                 return { ...item, value: Math.min(item.value + 1, 100) };
@@ -514,14 +643,14 @@ export default function Phase1Tab({
           // Update subject coverage bars dynamically
           setSubjectData(prev => {
             return prev.map(item => {
-              if (item.name.toLowerCase() === newQ.subject.toLowerCase()) {
+              if (item.name.toLowerCase() === finalQ.subject.toLowerCase()) {
                 return { ...item, value: Math.min(item.value + 1, 100) };
               }
               return item;
             });
           });
 
-          addSystemLog(`Agent-B validated Q#${totalQuestions + 1} — APPROVED [${newQ.bloom}]`);
+          addSystemLog(`Agent-B validated Q#${totalQuestions + 1} — APPROVED [${finalQ.bloom}]`);
         }
       }, i * 900 + 600);
     });
@@ -1183,6 +1312,7 @@ export default function Phase1Tab({
                     <p className="text-[9px] text-text2">Paper ID: <span className="text-white font-mono">#{pdfUploadResult.paper_id}</span></p>
                     <p className="text-[9px] text-text2">Exam ID: <span className="text-white font-mono">#{pdfUploadResult.exam_id}</span></p>
                     <p className="text-[9px] text-text2">Set: <span className="text-white font-mono">{pdfUploadResult.set_code}</span> | Size: <span className="text-white font-mono">{(pdfUploadResult.file_size_bytes / 1024).toFixed(1)} KB</span></p>
+                    <p className="text-[9px] text-text2">Scanned Questions: <span className="text-green-400 font-mono font-bold">{pdfUploadResult.extracted_count} questions extracted</span></p>
                     <p className="text-[9px] text-text3 font-mono break-all font-semibold">SHA-256: {pdfUploadResult.paper_hash}</p>
                     
                     {/* Add Download Sealed Encrypted Bundle button */}

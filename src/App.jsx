@@ -166,7 +166,7 @@ export default function App() {
     });
   }, []);
 
-  // Fetch real-time backend question statistics on load and mount
+  // Fetch real-time backend question statistics and approved questions on load and mount
   useEffect(() => {
     const fetchStats = async () => {
       try {
@@ -204,10 +204,54 @@ export default function App() {
         console.warn('Backend offline: using default seed stats.', err);
       }
     };
+
+    const fetchRecentQuestions = async () => {
+      try {
+        const res = await fetch('http://localhost:8001/api/questions?status=APPROVED&limit=50');
+        if (res.ok) {
+          const data = await res.json();
+          const mapped = data.map(q => {
+            let parsedText = q.text_json;
+            try {
+              const parsed = JSON.parse(q.text_json);
+              parsedText = parsed.en || parsed;
+            } catch (e) {}
+
+            let parsedOpts = [];
+            try {
+              const parsed = JSON.parse(q.options_json);
+              const enOpts = parsed.en || parsed;
+              parsedOpts = Object.entries(enOpts).map(([key, val]) => ({
+                text: `${key}. ${val}`,
+                correct: key === q.answer
+              }));
+            } catch (e) {}
+
+            return {
+              id: q.id.toString(),
+              text: parsedText,
+              subject: q.subject,
+              bloom: q.bloom_level,
+              similarity: q.source === "Synthetic" ? "Sim: 0.12" : "Sim: 0.05",
+              timestamp: new Date(q.created_at || Date.now()).toLocaleTimeString().slice(0, 8),
+              options: parsedOpts
+            };
+          });
+          setRecentQuestionsSynced(mapped);
+        }
+      } catch (err) {
+        console.warn('Backend offline: using default seed questions.', err);
+      }
+    };
+
     fetchStats();
+    fetchRecentQuestions();
     
-    // Poll stats every 10 seconds for real-time updates
-    const interval = setInterval(fetchStats, 10000);
+    // Poll stats and questions every 10 seconds for real-time updates
+    const interval = setInterval(() => {
+      fetchStats();
+      fetchRecentQuestions();
+    }, 10000);
     return () => clearInterval(interval);
   }, []);
 

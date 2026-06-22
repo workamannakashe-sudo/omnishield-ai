@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 
 export default function Phase1Tab({
   totalQuestions,
@@ -52,6 +52,81 @@ export default function Phase1Tab({
   const [pdfUploading, setPdfUploading] = useState(false);
   const [pdfUploadResult, setPdfUploadResult] = useState(null);
   const [pdfDragging, setPdfDragging] = useState(false);
+
+  // ─── Self-contained Question Bank Catalog State ───────────────────────────
+  const [catalogQuestions, setCatalogQuestions] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState(null);
+  const [catalogTotal, setCatalogTotal] = useState(0);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogSubjectFilter, setCatalogSubjectFilter] = useState('All');
+  const [catalogPage, setCatalogPage] = useState(0);
+  const CATALOG_PAGE_SIZE = 10;
+  const [catalogLastFetched, setCatalogLastFetched] = useState(null);
+
+  const mapQuestion = (q) => {
+    let parsedText = q.text_json;
+    try {
+      const p = JSON.parse(q.text_json);
+      parsedText = p.en || (typeof p === 'string' ? p : JSON.stringify(p));
+    } catch (e) {}
+    let parsedOpts = [];
+    try {
+      const p = JSON.parse(q.options_json);
+      const enOpts = p.en || p;
+      parsedOpts = Object.entries(enOpts).map(([key, val]) => ({
+        key,
+        text: `${key}. ${val}`,
+        correct: key === q.answer
+      }));
+    } catch (e) {}
+    return {
+      id: q.id,
+      text: parsedText,
+      subject: q.subject || 'General',
+      bloom: q.bloom_level || '—',
+      difficulty: q.difficulty || '—',
+      source: q.source || 'Synthetic',
+      answer: q.answer,
+      options: parsedOpts,
+      createdAt: q.created_at
+    };
+  };
+
+  const fetchCatalog = useCallback(async () => {
+    try {
+      const [qRes, statsRes] = await Promise.all([
+        fetch('http://localhost:8001/api/questions?status=APPROVED&limit=200'),
+        fetch('http://localhost:8001/api/questions/stats')
+      ]);
+      if (qRes.ok) {
+        const data = await qRes.json();
+        setCatalogQuestions(data.map(mapQuestion));
+        setCatalogError(null);
+        setCatalogLastFetched(new Date());
+      } else {
+        setCatalogError('API returned ' + qRes.status);
+      }
+      if (statsRes.ok) {
+        const stats = await statsRes.json();
+        setCatalogTotal(stats.counters?.approved || 0);
+        // Also sync parent stats
+        if (setTotalQuestions) setTotalQuestions(stats.counters?.approved || 0);
+      }
+    } catch (err) {
+      setCatalogError('Backend offline — cannot load catalog');
+      console.warn('[CatalogFetch] Error:', err);
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, [setTotalQuestions]);
+
+  // Fetch on mount + poll every 15 seconds
+  useEffect(() => {
+    fetchCatalog();
+    const poll = setInterval(fetchCatalog, 15000);
+    return () => clearInterval(poll);
+  }, [fetchCatalog]);
 
   const fetchOcrStaged = async (paperId) => {
     try {
@@ -266,50 +341,14 @@ export default function Phase1Tab({
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Upload failed');
       setPdfUploadResult(data);
-      addSystemLog(`[PDF PAPER] Uploaded & sealed: "${data.paper_name}" (Paper #${data.paper_id}, Hash: ${data.paper_hash?.slice(0, 16)}...)`);
+      addSystemLog(`[PDF PAPER] Uploaded & sealed: "${data.paper_name}" (Paper #${data.paper_id}, ${data.extracted_count} questions scanned, Hash: ${data.paper_hash?.slice(0, 16)}...)`);
 
-      // Refresh live statistics and question bank catalog from backend
-      try {
-        const statsRes = await fetch('http://localhost:8001/api/questions/stats');
-        if (statsRes.ok) {
-          const statsData = await statsRes.json();
-          setTotalQuestions(statsData.counters.approved || 4872);
-        }
-        const qRes = await fetch('http://localhost:8001/api/questions?status=APPROVED&limit=50');
-        if (qRes.ok) {
-          const qData = await qRes.json();
-          const mapped = qData.map(q => {
-            let parsedText = q.text_json;
-            try {
-              const parsed = JSON.parse(q.text_json);
-              parsedText = parsed.en || parsed;
-            } catch (e) {}
+      // Immediately refresh the question bank catalog with newly scanned questions
+      setTimeout(() => {
+        setCatalogLoading(true);
+        fetchCatalog();
+      }, 800);
 
-            let parsedOpts = [];
-            try {
-              const parsed = JSON.parse(q.options_json);
-              const enOpts = parsed.en || parsed;
-              parsedOpts = Object.entries(enOpts).map(([key, val]) => ({
-                text: `${key}. ${val}`,
-                correct: key === q.answer
-              }));
-            } catch (e) {}
-
-            return {
-              id: q.id.toString(),
-              text: parsedText,
-              subject: q.subject,
-              bloom: q.bloom_level,
-              similarity: q.source === "Synthetic" ? "Sim: 0.12" : "Sim: 0.05",
-              timestamp: new Date(q.created_at || Date.now()).toLocaleTimeString().slice(0, 8),
-              options: parsedOpts
-            };
-          });
-          setRecentQuestions(mapped);
-        }
-      } catch (err) {
-        console.warn("Failed to auto-refresh question bank after PDF upload:", err);
-      }
     } catch (err) {
       alert('Error: ' + err.message);
     } finally {
@@ -359,59 +398,10 @@ export default function Phase1Tab({
         body: JSON.stringify(payload)
       });
       if (res.ok) {
-        const q = await res.json();
-        setTotalQuestions(prev => prev + 1);
-
-        let parsedText = q.text_json;
-        try {
-          const parsed = JSON.parse(q.text_json);
-          parsedText = parsed.en || parsed;
-        } catch (e) {}
-
-        let parsedOpts = [];
-        try {
-          const parsed = JSON.parse(q.options_json);
-          const enOpts = parsed.en || parsed;
-          parsedOpts = Object.entries(enOpts).map(([key, val]) => ({
-            text: `${key}. ${val}`,
-            correct: key === q.answer
-          }));
-        } catch (e) {}
-
-        const newUIQ = {
-          id: q.id.toString(),
-          text: parsedText,
-          subject: q.subject,
-          bloom: q.bloom_level,
-          similarity: "Sim: 0.00 (Manual)",
-          timestamp: new Date().toLocaleTimeString().slice(0, 8),
-          options: parsedOpts
-        };
-
-        setRecentQuestions(prev => [newUIQ, ...prev]);
-
-        // Update Bloom's taxonomy bars dynamically
-        setDifficultyData(prev => {
-          const shortName = manualBloom.split(' — ')[1] || 'Apply';
-          return prev.map(item => {
-            if (item.name.toLowerCase().includes(shortName.toLowerCase())) {
-              return { ...item, value: Math.min(item.value + 1, 100) };
-            }
-            return item;
-          });
-        });
-
-        // Update subject coverage bars dynamically
-        setSubjectData(prev => {
-          return prev.map(item => {
-            if (item.name.toLowerCase() === manualSubject.toLowerCase()) {
-              return { ...item, value: Math.min(item.value + 1, 100) };
-            }
-            return item;
-          });
-        });
-
         addSystemLog(`[MANUAL ADD] Operator registered new question to the bank [${manualSubject} - ${manualBloom}]`);
+
+        // Refresh catalog to include the newly added question
+        setTimeout(() => fetchCatalog(), 300);
 
         // Reset inputs
         setManualQuestion('');
@@ -421,7 +411,7 @@ export default function Phase1Tab({
         setManualOptionD('');
         setManualCorrect('A');
 
-        alert("Question added to bank successfully!");
+        alert("✅ Question added to bank successfully! The catalog will refresh automatically.");
       } else {
         const err = await res.json();
         alert("Failed to add question: " + (err.detail || "Unknown error"));
@@ -1353,40 +1343,169 @@ export default function Phase1Tab({
           </div>
         )}
 
-        {/* Approved Question Bank */}
+        {/* Approved Question Bank — Self-Contained Live Catalog */}
         <div className="panel mt-3">
-          <div className="panel-header">
+          <div className="panel-header" style={{ flexWrap: 'wrap', gap: '6px' }}>
             <div className="panel-title">
               <div className="dot" style={{ backgroundColor: 'var(--green)' }} />
               Approved Question Bank Catalog
-            </div>
-            <div className="badge badge-green">SECURE LEDGER</div>
-          </div>
-          <div className="panel-body">
-            <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
-              {recentQuestions.map((q, idx) => (
-                <div key={q.id || idx} className="p-3 border border-border bg-bg3/60 rounded-lg space-y-2 hover:border-blue/50 transition-all text-left">
-                  <div className="flex justify-between items-center text-[9px] font-mono">
-                    <span className="text-blue font-semibold">{q.subject}</span>
-                    <span className="text-amber font-semibold">{q.bloom}</span>
-                    <span className="text-green font-semibold">Similarity: {q.similarity}</span>
-                  </div>
-                  <p className="text-xs text-white font-medium leading-relaxed">{q.text}</p>
-                  {q.options && (
-                    <div className="grid grid-cols-2 gap-2 pl-3 pt-1 border-t border-border/30">
-                      {q.options.map((opt, optIdx) => (
-                        <div key={optIdx} className={`text-[10px] py-1 px-1.5 border rounded ${opt.correct ? 'border-green/30 bg-green-dim text-green' : 'border-border/30 text-text2'}`}>
-                          {opt.text}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-              {recentQuestions.length === 0 && (
-                <div className="text-center text-text2 text-xs italic py-4">No questions approved in the memory bank yet.</div>
+              {!catalogLoading && (
+                <span className="ml-2 text-[9px] font-mono bg-green/10 text-green border border-green/20 px-1.5 py-0.5 rounded">
+                  {catalogTotal.toLocaleString()} approved
+                </span>
               )}
             </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {catalogLastFetched && (
+                <span className="text-[8px] font-mono text-text3">
+                  Updated {catalogLastFetched.toLocaleTimeString().slice(0,8)}
+                </span>
+              )}
+              <button
+                onClick={() => { setCatalogLoading(true); fetchCatalog(); }}
+                className="text-[9px] px-2 py-0.5 rounded bg-blue/10 border border-blue/20 text-blue hover:bg-blue/20 transition-all font-mono"
+              >
+                ↻ Refresh
+              </button>
+              <div className="badge badge-green">SECURE LEDGER</div>
+            </div>
+          </div>
+
+          {/* Search + Subject Filter */}
+          <div className="px-3 pt-3 pb-2 flex flex-col gap-2 border-b border-border/30">
+            <input
+              type="text"
+              placeholder="🔍  Search questions..."
+              value={catalogSearch}
+              onChange={e => { setCatalogSearch(e.target.value); setCatalogPage(0); }}
+              className="inp text-xs py-1.5"
+            />
+            <div className="flex gap-1.5 flex-wrap">
+              {['All', 'Biology', 'Chemistry', 'Physics'].map(subj => (
+                <button
+                  key={subj}
+                  onClick={() => { setCatalogSubjectFilter(subj); setCatalogPage(0); }}
+                  className={`text-[9px] px-2 py-0.5 rounded-full border font-mono transition-all ${
+                    catalogSubjectFilter === subj
+                      ? 'bg-blue border-blue text-white'
+                      : 'bg-bg3 border-border text-text2 hover:text-white'
+                  }`}
+                >
+                  {subj}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="panel-body pt-2">
+            {catalogLoading ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3">
+                <div className="w-6 h-6 border-2 border-blue border-t-transparent rounded-full animate-spin" />
+                <p className="text-xs text-text2 font-mono">Loading question bank from backend...</p>
+              </div>
+            ) : catalogError ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-3">
+                <div className="text-2xl">⚠️</div>
+                <p className="text-xs text-red font-mono text-center">{catalogError}</p>
+                <button
+                  onClick={() => { setCatalogLoading(true); fetchCatalog(); }}
+                  className="text-[10px] px-3 py-1 rounded bg-red/10 border border-red/20 text-red hover:bg-red/20 transition-all"
+                >
+                  Retry Connection
+                </button>
+              </div>
+            ) : (() => {
+                const filtered = catalogQuestions.filter(q => {
+                  const matchSubject = catalogSubjectFilter === 'All' || q.subject === catalogSubjectFilter;
+                  const matchSearch = !catalogSearch.trim() ||
+                    q.text.toLowerCase().includes(catalogSearch.toLowerCase()) ||
+                    q.subject.toLowerCase().includes(catalogSearch.toLowerCase()) ||
+                    q.bloom.toLowerCase().includes(catalogSearch.toLowerCase());
+                  return matchSubject && matchSearch;
+                });
+                const totalPages = Math.max(1, Math.ceil(filtered.length / CATALOG_PAGE_SIZE));
+                const pageItems = filtered.slice(catalogPage * CATALOG_PAGE_SIZE, (catalogPage + 1) * CATALOG_PAGE_SIZE);
+
+                return (
+                  <>
+                    {filtered.length === 0 ? (
+                      <div className="text-center py-8">
+                        <div className="text-2xl mb-2">🔍</div>
+                        <p className="text-xs text-text2 italic font-mono">No questions match your search criteria.</p>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1 pb-1">
+                          {pageItems.map((q) => {
+                            const subjectColor = q.subject === 'Biology' ? 'text-green' : q.subject === 'Chemistry' ? 'text-blue' : 'text-amber';
+                            const bloomColor = q.bloom?.includes('L1') ? 'text-text2' : q.bloom?.includes('L2') ? 'text-blue' : q.bloom?.includes('L3') ? 'text-green' : q.bloom?.includes('L4') ? 'text-amber' : 'text-red';
+                            return (
+                              <div key={q.id} className="p-3 border border-border bg-bg3/60 rounded-lg space-y-2 hover:border-blue/40 hover:bg-bg3/80 transition-all text-left group">
+                                <div className="flex justify-between items-start gap-2">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${subjectColor} border-current/20 bg-current/5`}>{q.subject}</span>
+                                    <span className={`text-[9px] font-mono ${bloomColor}`}>{q.bloom}</span>
+                                    <span className="text-[8px] font-mono text-text3 border border-border/30 px-1 py-0.5 rounded">{q.difficulty}</span>
+                                    {q.source === 'OCR-extracted' && (
+                                      <span className="text-[8px] font-mono text-amber border border-amber/20 px-1 py-0.5 rounded bg-amber/5">📄 OCR</span>
+                                    )}
+                                    {q.source === 'Manual' && (
+                                      <span className="text-[8px] font-mono text-blue border border-blue/20 px-1 py-0.5 rounded bg-blue/5">✍️ Manual</span>
+                                    )}
+                                  </div>
+                                  <span className="text-[8px] font-mono text-text3 shrink-0">#{q.id}</span>
+                                </div>
+                                <p className="text-[11px] text-white font-medium leading-relaxed">{q.text}</p>
+                                {q.options && q.options.length > 0 && (
+                                  <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-border/20">
+                                    {q.options.map((opt) => (
+                                      <div
+                                        key={opt.key}
+                                        className={`text-[9px] py-1 px-2 border rounded font-mono ${
+                                          opt.correct
+                                            ? 'border-green/40 bg-green/10 text-green font-bold'
+                                            : 'border-border/30 text-text2'
+                                        }`}
+                                      >
+                                        {opt.text}
+                                        {opt.correct && ' ✓'}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Pagination */}
+                        <div className="flex items-center justify-between pt-3 mt-1 border-t border-border/20">
+                          <span className="text-[9px] font-mono text-text3">
+                            Showing {catalogPage * CATALOG_PAGE_SIZE + 1}–{Math.min((catalogPage + 1) * CATALOG_PAGE_SIZE, filtered.length)} of {filtered.length}
+                          </span>
+                          <div className="flex gap-1">
+                            <button
+                              disabled={catalogPage === 0}
+                              onClick={() => setCatalogPage(p => p - 1)}
+                              className="text-[9px] px-2 py-0.5 rounded border border-border/40 text-text2 hover:text-white hover:border-blue/40 disabled:opacity-30 disabled:cursor-not-allowed transition-all font-mono"
+                            >
+                              ← Prev
+                            </button>
+                            <span className="text-[9px] px-2 py-0.5 font-mono text-text2">{catalogPage + 1}/{totalPages}</span>
+                            <button
+                              disabled={catalogPage >= totalPages - 1}
+                              onClick={() => setCatalogPage(p => p + 1)}
+                              className="text-[9px] px-2 py-0.5 rounded border border-border/40 text-text2 hover:text-white hover:border-blue/40 disabled:opacity-30 disabled:cursor-not-allowed transition-all font-mono"
+                            >
+                              Next →
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </>
+                );
+              })()}
           </div>
         </div>
       </div>

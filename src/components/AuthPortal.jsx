@@ -245,7 +245,7 @@ export default function AuthPortal({ onLoginSuccess }) {
           {role === 'nta' ? (
             <div>
               <span className="text-blue">NTA Username:</span> <span className="text-white">board_admin</span><br />
-              <span className="text-blue">NTA Password:</span> <span className="text-white">board345</span> <span className="text-text2">(or board123 / admin123)</span>
+              <span className="text-blue">NTA Password:</span> <span className="text-white">board123</span> <span className="text-text2">(or admin123)</span>
             </div>
           ) : (
             <div>

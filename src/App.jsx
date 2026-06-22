@@ -45,51 +45,8 @@ export default function App() {
     { name: 'Physics', value: 20 }
   ]);
 
-  // Audit list
-  const [recentQuestions, setRecentQuestions] = useState([
-    {
-      id: 'BIOL-2026-A2',
-      text: 'Analyze the ribosomal subunit configuration during eukaryotic translation initiation phase.',
-      subject: 'Biology',
-      bloom: 'L4 Analyse',
-      similarity: '14.5%',
-      timestamp: '08:10:12 AM',
-      options: [
-        { text: "A. 40S and 60S subunit scanning", correct: true },
-        { text: "B. 30S and 50S prokaryotic binding", correct: false },
-        { text: "C. 80S direct initiation bypass", correct: false },
-        { text: "D. 70S mono-cistronic translation", correct: false }
-      ]
-    },
-    {
-      id: 'PHYS-2026-H4',
-      text: 'Calculate the magnetic flux density at the center of a circular current carrying loop of radius R.',
-      subject: 'Physics',
-      bloom: 'L3 Apply',
-      similarity: '18.1%',
-      timestamp: '08:08:45 AM',
-      options: [
-        { text: "A. μ0 I / (2R)", correct: true },
-        { text: "B. μ0 I / (4πR)", correct: false },
-        { text: "C. μ0 I R^2", correct: false },
-        { text: "D. Zero", correct: false }
-      ]
-    },
-    {
-      id: 'CHEM-2026-F9',
-      text: 'Identify the major product formed when toluene is treated with chlorine in the presence of FeCl3.',
-      subject: 'Chemistry',
-      bloom: 'L1 Remember',
-      similarity: '9.2%',
-      timestamp: '08:05:33 AM',
-      options: [
-        { text: "A. o- and p-chlorotoluene", correct: true },
-        { text: "B. m-chlorotoluene", correct: false },
-        { text: "C. Benzyl chloride", correct: false },
-        { text: "D. Benzal chloride", correct: false }
-      ]
-    }
-  ]);
+  // Approved questions list (live from backend via Phase1Tab's self-contained catalog)
+  const [recentQuestions, setRecentQuestions] = useState([]);
 
   // Threat signals feed
   const [threatSignals, setThreatSignals] = useState([
